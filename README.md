@@ -1,1 +1,0 @@
-# Game Karaoke by Willian\n\n## Installation\n\n1. Clone repository\n2. Run `npm install`\n3. Run `python worker/setup/install.py --accelerator cpu`\n4. Start backend with `npm start`\n\n> ⚠️ This project is for local use only

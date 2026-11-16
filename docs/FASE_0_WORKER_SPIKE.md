@@ -7,7 +7,7 @@
 
 ---
 ### `T0.1` — Estrutura de diretórios, `config/*.json`, documentos em `docs/` e `README.md`
-* **Status:** `[x] COMPLETA`
+* **Status:** `[ ] NÃO INICIADA`
 * **Arquivos:**
   * `package.json` (raiz, Node 20+, `"type": "module"`) com scripts `start` (sobe o backend), `doctor` (`node scripts/doctor.js`) e `test` (`node --test`)
   * `config/default.json`
@@ -40,7 +40,7 @@
 ---
 
 ### `T0.2` — Setup isolado do Worker Python por perfil de acelerador (`venv`)
-* **Status:** `[x] COMPLETA`
+* **Status:** `[ ] NÃO INICIADA`
 * **Arquivos:**
   * `worker/requirements-base.txt`
   * `worker/setup/requirements-cpu.txt`
