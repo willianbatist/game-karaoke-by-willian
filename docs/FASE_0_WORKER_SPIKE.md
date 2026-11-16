@@ -6,9 +6,8 @@
 **Objetivo:** Construir o alicerce do projeto, isolar o ambiente Python por acelerador de hardware, implementar o contrato Node $\leftrightarrow$ Python e validar a qualidade da separação vocal e extração de F0 em ~20 músicas reais antes de construir a interface.
 
 ---
-
 ### `T0.1` — Estrutura de diretórios, `config/*.json`, documentos em `docs/` e `README.md`
-* **Status:** `[ ] NÃO INICIADA`
+* **Status:** `[x] COMPLETA`
 * **Arquivos:**
   * `package.json` (raiz, Node 20+, `"type": "module"`) com scripts `start` (sobe o backend), `doctor` (`node scripts/doctor.js`) e `test` (`node --test`)
   * `config/default.json`
@@ -41,7 +40,7 @@
 ---
 
 ### `T0.2` — Setup isolado do Worker Python por perfil de acelerador (`venv`)
-* **Status:** `[ ] NÃO INICIADA`
+* **Status:** `[x] COMPLETA`
 * **Arquivos:**
   * `worker/requirements-base.txt`
   * `worker/setup/requirements-cpu.txt`
