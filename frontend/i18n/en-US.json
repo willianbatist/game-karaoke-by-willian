@@ -1,0 +1,128 @@
+{
+  "app": {
+    "title": "Local Karaoke"
+  },
+  "nav": {
+    "home": "Home",
+    "history": "History",
+    "settings": "Settings"
+  },
+  "theme": {
+    "label": "Theme",
+    "dark": "Dark",
+    "light": "Light"
+  },
+  "lang": {
+    "label": "Language",
+    "pt-BR": "Português (BR)",
+    "en-US": "English (US)"
+  },
+  "health": {
+    "checking": "Checking system...",
+    "ok": "System ready ({device})",
+    "degraded": "Warning: check dependencies",
+    "offline": "Server unreachable"
+  },
+  "banner": {
+    "dismiss": "Dismiss"
+  },
+  "modal": {
+    "defaultTitle": "Confirm action",
+    "confirm": "Confirm",
+    "cancel": "Cancel"
+  },
+  "home": {
+    "heading": "Local Karaoke",
+    "subtitle": "Paste a YouTube link or 11-character video ID to prepare, or pick a ready song below.",
+    "inputPlaceholder": "e.g. https://www.youtube.com/watch?v=z2ZmXRkXREw or z2ZmXRkXREw",
+    "prepareBtn": "Prepare song",
+    "invalidVideoId": "Please enter a valid YouTube link or 11-character video ID.",
+    "cachedHeading": "Ready songs in local cache ({count})",
+    "noCachedSongs": "No ready songs in local cache yet. Prepare one above!",
+    "singBtn": "Sing",
+    "lyricsSynced": "Synced lyrics",
+    "lyricsPlain": "Plain lyrics",
+    "lyricsNone": "No lyrics"
+  },
+  "prepare": {
+    "title": "Preparing song: {videoId}",
+    "queued": "Queued (position {position})...",
+    "running": "Processing step: {step} ({percent}%)",
+    "ready": "Song ready! Opening stage...",
+    "canceled": "Preparation canceled.",
+    "failed": "Failed to prepare song: {reason}",
+    "cancelBtn": "Cancel preparation",
+    "retryBtn": "Retry",
+    "backBtn": "Back"
+  },
+  "play": {
+    "backBtn": "Leave",
+    "leaveTitle": "Leave stage?",
+    "leaveMsg": "Current playback will stop and you will return to the home screen.",
+    "loadingAudio": "Loading audio stems...",
+    "playBtn": "Play",
+    "pauseBtn": "Pause",
+    "restartBtn": "Restart",
+    "instrumentalVol": "Instrumental",
+    "vocalsVol": "Guide Vocals",
+    "lyricsOffset": "Lyrics sync",
+    "lyricsSelectLabel": "Lyrics version",
+    "noLyricsCandidate": "No lyrics",
+    "videoUnavailable": "YouTube video unavailable (audio/lyrics mode)",
+    "instrumentalMode": "Instrumental mode (no synced lyrics found)",
+    "plainLyricsBadge": "Unsynchronized lyrics (manual scroll)",
+    "waitingIntro": "Waiting for vocals...",
+    "micOnBtn": "Mic Active",
+    "micOffBtn": "Enable Mic",
+    "micUnavailable": "Could not access microphone",
+    "noPitchData": "No reference vocal melody available for this track",
+    "hitIdle": "Waiting for voice",
+    "hitFree": "Instrumental",
+    "hitPerfect": "Perfect!",
+    "hitGreat": "Great!",
+    "hitGood": "Good",
+    "hitMiss": "Off pitch"
+  },
+  "settings": {
+    "title": "Audio & Microphone Settings",
+    "subtitle": "Choose your microphone, test real-time pitch detection, and calibrate input latency compensation.",
+    "micDeviceLabel": "Input device (Microphone)",
+    "micDeviceDesc": "Select the microphone used for singing. Full device names appear once testing starts.",
+    "micDefaultOption": "System default microphone",
+    "refreshDevicesBtn": "Refresh list",
+    "startMicTestBtn": "Start mic test",
+    "stopMicTestBtn": "Stop test",
+    "micIdleStatus": "Microphone off — click 'Start mic test' to test.",
+    "micActiveStatus": "Capturing live audio (browser AEC/AGC filters disabled).",
+    "inputGainLabel": "Microphone input gain",
+    "inputGainDesc": "Increase if the signal level on the meter above is too low.",
+    "noiseGateLabel": "Ambient noise gate",
+    "noiseGateDesc": "Signals below the yellow marker on the meter are ignored.",
+    "latencyHeading": "Latency Calibration",
+    "latencyDesc": "Compensates the delay between speaker playback and your voice reaching the browser.",
+    "latencyManualLabel": "Latency compensation (ms)",
+    "latencyManualDesc": "Positive values offset microphone input delay.",
+    "autoCalibTitle": "Automatic wizard (4 beeps)",
+    "autoCalibDesc": "Place the microphone near your speaker and click to measure round-trip delay automatically.",
+    "autoCalibBtn": "Measure latency automatically",
+    "autoCalibProgress": "Playing beep {current} of {total}...",
+    "autoCalibSuccess": "Measured latency: {ms} ms ({valid}/{total} beeps detected) and applied!",
+    "autoCalibNoPeak": "No beeps detected by the microphone. Move the mic closer to the speaker or adjust manually.",
+    "stageDefaultsHeading": "Default Stage Volumes",
+    "defaultInstLabel": "Initial Instrumental volume",
+    "defaultVocalsLabel": "Initial Guide Vocals volume",
+    "resetDefaultsBtn": "Reset defaults",
+    "resetConfirmTitle": "Reset audio settings?",
+    "resetConfirmMsg": "Gain, noise gate, latency, and default stage volumes will return to factory values.",
+    "resetDone": "Audio settings reset to defaults."
+  },
+  "routes": {
+    "resultTitle": "Session Result: {sessionId}",
+    "resultDesc": "Detailed scoreboard and session history will be implemented in Phase 3.",
+    "historyTitle": "History & Cached Songs",
+    "historyDesc": "Full listing and history filters will be built in Phase 4.",
+    "notFoundTitle": "Page not found",
+    "notFoundDesc": "The requested route does not exist.",
+    "backHome": "Back to home"
+  }
+}

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Karaokê Local</title>
+  <link rel="stylesheet" href="/styles/tokens.css" />
+  <link rel="stylesheet" href="/styles/base.css" />
+  <link rel="stylesheet" href="/styles/play.css" />
+  <link rel="stylesheet" href="/styles/settings.css" />
+</head>
+<body>
+  <header class="app-header">
+    <a href="#/" class="brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <span id="brand-title">Karaokê Local</span>
+    </a>
+
+    <nav class="nav-links" aria-label="Navegação principal">
+      <a href="#/" class="nav-link" id="nav-home" data-nav-route="home">Início</a>
+      <a href="#/history" class="nav-link" id="nav-history" data-nav-route="history">Histórico</a>
+      <a href="#/settings" class="nav-link" id="nav-settings" data-nav-route="settings">Configurações</a>
+    </nav>
+
+    <div class="header-controls">
+      <span id="health-badge" class="health-badge" role="status">Verificando sistema...</span>
+
+      <select id="theme-select" class="select-control" aria-label="Tema">
+        <option value="dark">Escuro</option>
+        <option value="light">Claro</option>
+      </select>
+
+      <select id="locale-select" class="select-control" aria-label="Idioma">
+        <option value="pt-BR">Português (BR)</option>
+        <option value="en-US">English (US)</option>
+      </select>
+    </div>
+  </header>
+
+  <div id="global-banner" class="global-banner" role="alert" hidden>
+    <span id="global-banner-text"></span>
+    <button type="button" id="global-banner-close" class="btn btn-secondary">Fechar</button>
+  </div>
+
+  <main id="app-view" class="app-main"></main>
+
+  <div id="confirm-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" hidden>
+    <div class="modal-dialog">
+      <h3 id="confirm-modal-title" class="modal-title">Confirmar ação</h3>
+      <p id="confirm-modal-message" class="modal-message"></p>
+      <div class="modal-actions">
+        <button type="button" id="confirm-modal-cancel" class="btn btn-secondary">Cancelar</button>
+        <button type="button" id="confirm-modal-accept" class="btn btn-primary">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

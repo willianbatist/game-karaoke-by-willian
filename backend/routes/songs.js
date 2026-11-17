@@ -1,0 +1,279 @@
+/**
+ * Rotas de catálogo local, streaming de artefatos e ajustes por música (CONTRACTS.md §4 e §5):
+ * - GET /api/songs
+ * - GET /api/songs/:id
+ * - GET /api/songs/:id/files/:filename (com suporte a HTTP Range e guarda de path traversal)
+ * - PATCH /api/songs/:id
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import { Router } from "express";
+import { AppError } from "../utils/errors.js";
+import { safeResolveCachePath, validateVideoId } from "../utils/security.js";
+
+const ALLOWED_CACHE_FILES = new Set([
+  "instrumental.flac",
+  "vocals.flac",
+  "pitch_map.json",
+  "lyrics.json",
+  "manifest.json",
+]);
+
+function getMimeType(filename) {
+  if (filename.endsWith(".flac")) return "audio/flac";
+  if (filename.endsWith(".json")) return "application/json; charset=utf-8";
+  return "application/octet-stream";
+}
+
+export function createSongsRouter({ cacheManager, jobQueue }) {
+  const router = Router();
+
+  // Lista todas as músicas prontas no cache local
+  router.get("/", (_req, res, next) => {
+    try {
+      const songs = [];
+      if (fs.existsSync(cacheManager.cacheRoot)) {
+        for (const entry of fs.readdirSync(cacheManager.cacheRoot, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const videoId = entry.name;
+          if (!validateVideoId(videoId) || !cacheManager.isSongReady(videoId)) continue;
+
+          const manifest = cacheManager.readManifest(videoId);
+          if (!manifest) continue;
+
+          songs.push({
+            videoId,
+            title: manifest.source?.title ?? videoId,
+            channel: manifest.source?.channel ?? "",
+            duration: manifest.source?.duration ?? 0,
+            lyrics: manifest.lyrics ?? null,
+            compatibility: manifest.compatibility ?? null,
+            lastPlayed: manifest.user?.last_played ?? null,
+          });
+        }
+      }
+
+      // Ordena pelas tocadas mais recentemente primeiro
+      songs.sort((a, b) => {
+        const ta = a.lastPlayed ? Date.parse(a.lastPlayed) : 0;
+        const tb = b.lastPlayed ? Date.parse(b.lastPlayed) : 0;
+        return tb - ta;
+      });
+
+      return res.json({ songs });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  // Retorna manifest.json + lyrics.json da música e atualiza last_played
+  router.get("/:id", (req, res, next) => {
+    try {
+      const videoId = req.params.id;
+      if (!validateVideoId(videoId)) {
+        throw new AppError(400, "INVALID_VIDEO_ID", "Identificador de vídeo inválido.");
+      }
+
+      if (!cacheManager.isSongReady(videoId)) {
+        throw new AppError(404, "SONG_NOT_FOUND", "Música não encontrada no cache.");
+      }
+
+      const isJobActive = jobQueue.hasActiveJob(videoId);
+      const updatedManifest =
+        req.query.preview === "1"
+          ? cacheManager.readManifest(videoId)
+          : (cacheManager.touchLastPlayed(videoId, { isJobActive }) ??
+            cacheManager.readManifest(videoId));
+
+      const lyrics = cacheManager.readLyrics(videoId);
+
+      return res.json({
+        manifest: updatedManifest,
+        lyrics,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  // Entrega arquivos do cache (instrumental.flac, vocals.flac, pitch_map.json, etc.) com HTTP Range
+  router.get("/:id/files/:filename", (req, res, next) => {
+    try {
+      const { id: videoId, filename } = req.params;
+      const resolvedPath = safeResolveCachePath(cacheManager.cacheRoot, videoId, filename);
+
+      if (!ALLOWED_CACHE_FILES.has(filename)) {
+        throw new AppError(403, "FILE_NOT_ALLOWED", "Arquivo não permitido.");
+      }
+
+      if (!fs.existsSync(resolvedPath)) {
+        throw new AppError(404, "FILE_NOT_FOUND", "Arquivo não encontrado.");
+      }
+
+      const stat = fs.statSync(resolvedPath);
+      const totalSize = stat.size;
+      const contentType = getMimeType(filename);
+      const rangeHeader = req.headers.range;
+
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Content-Type", contentType);
+
+      if (!rangeHeader) {
+        res.setHeader("Content-Length", totalSize);
+        return fs.createReadStream(resolvedPath).pipe(res);
+      }
+
+      // Interpreta cabeçalho HTTP Range: bytes=start-end
+      const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+      if (!match) {
+        res.setHeader("Content-Range", `bytes */${totalSize}`);
+        return res.status(416).end();
+      }
+
+      let start = match[1] ? Number.parseInt(match[1], 10) : 0;
+      let end = match[2] ? Number.parseInt(match[2], 10) : totalSize - 1;
+
+      if (!match[1] && match[2]) {
+        // Sufixo: bytes=-500 (últimos 500 bytes)
+        const suffixLen = Number.parseInt(match[2], 10);
+        start = Math.max(0, totalSize - suffixLen);
+        end = totalSize - 1;
+      }
+
+      if (
+        Number.isNaN(start) ||
+        Number.isNaN(end) ||
+        start < 0 ||
+        end >= totalSize ||
+        start > end
+      ) {
+        res.setHeader("Content-Range", `bytes */${totalSize}`);
+        return res.status(416).end();
+      }
+
+      const chunkSize = end - start + 1;
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${totalSize}`);
+      res.setHeader("Content-Length", chunkSize);
+
+      return fs.createReadStream(resolvedPath, { start, end }).pipe(res);
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  // Atualiza preferências da música (letra escolhida, offset_ms de letra e offset de latência por microfone)
+  router.patch("/:id", (req, res, next) => {
+    try {
+      const videoId = req.params.id;
+      if (!validateVideoId(videoId)) {
+        throw new AppError(400, "INVALID_VIDEO_ID", "Identificador de vídeo inválido.");
+      }
+
+      if (!cacheManager.isSongReady(videoId)) {
+        throw new AppError(404, "SONG_NOT_FOUND", "Música não encontrada no cache.");
+      }
+
+      if (jobQueue.hasActiveJob(videoId)) {
+        throw new AppError(
+          409,
+          "JOB_ACTIVE",
+          "Não é possível alterar a música enquanto ela está sendo processada."
+        );
+      }
+
+      const manifest = cacheManager.readManifest(videoId);
+      let lyricsData = cacheManager.readLyrics(videoId);
+      const body = req.body ?? {};
+
+      // 1. Atualização de offset de sincronia da letra (offset_ms)
+      if (body.offset_ms !== undefined) {
+        const offsetMs = Number(body.offset_ms);
+        if (!Number.isFinite(offsetMs)) {
+          throw new AppError(400, "INVALID_OFFSET", "offset_ms deve ser um número válido.");
+        }
+        manifest.lyrics = {
+          source: "lrclib",
+          type: "none",
+          selected_id: null,
+          sync_quality: 0.0,
+          ...(manifest.lyrics || {}),
+          offset_ms: Math.round(offsetMs),
+        };
+      }
+
+      // 2. Atualização da letra escolhida (selected_id) em lyrics.json e manifest.lyrics
+      if (body.selected_id !== undefined) {
+        if (!lyricsData || !Array.isArray(lyricsData.candidates)) {
+          throw new AppError(400, "NO_LYRICS_CANDIDATES", "Não há candidatos de letra salvos.");
+        }
+
+        if (body.selected_id === null) {
+          lyricsData.selected_id = null;
+          manifest.lyrics = {
+            ...(manifest.lyrics || {}),
+            source: "lrclib",
+            type: "none",
+            selected_id: null,
+          };
+        } else {
+          const selected = lyricsData.candidates.find((c) => c.id === body.selected_id);
+          if (!selected) {
+            throw new AppError(
+              400,
+              "INVALID_LYRICS_ID",
+              "Candidato de letra não encontrado para esta música."
+            );
+          }
+
+          lyricsData.selected_id = selected.id;
+          const type = selected.syncedLyrics
+            ? "synced"
+            : selected.plainLyrics
+              ? "plain"
+              : "none";
+
+          manifest.lyrics = {
+            ...(manifest.lyrics || {}),
+            source: "lrclib",
+            type,
+            selected_id: selected.id,
+          };
+        }
+
+        const songDir = cacheManager.getSongDir(videoId);
+        const lyricsTarget = path.join(songDir, "lyrics.json");
+        const lyricsTmp = path.join(songDir, `lyrics.json.${process.pid}.tmp`);
+        fs.writeFileSync(lyricsTmp, JSON.stringify(lyricsData, null, 2) + "\n", "utf-8");
+        fs.renameSync(lyricsTmp, lyricsTarget);
+      }
+
+      // 3. Atualização de offset de latência de microfone por dispositivo (latency_offsets_ms)
+      if (body.latency_offsets_ms && typeof body.latency_offsets_ms === "object") {
+        manifest.user = {
+          latency_offsets_ms: {},
+          last_played: null,
+          ...(manifest.user || {}),
+          latency_offsets_ms: {
+            ...(manifest.user?.latency_offsets_ms || {}),
+            ...body.latency_offsets_ms,
+          },
+        };
+      }
+
+      const savedManifest = cacheManager.writeManifestAtomic(videoId, manifest, {
+        isJobActive: false,
+      });
+
+      return res.json({
+        manifest: savedManifest,
+        lyrics: lyricsData,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  return router;
+}

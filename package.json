@@ -11,5 +11,8 @@
     "start": "node backend/server.js",
     "doctor": "node scripts/doctor.js",
     "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^5.3.0"
   }
 }

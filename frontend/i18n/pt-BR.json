@@ -1,0 +1,128 @@
+{
+  "app": {
+    "title": "Karaokê Local"
+  },
+  "nav": {
+    "home": "Início",
+    "history": "Histórico",
+    "settings": "Configurações"
+  },
+  "theme": {
+    "label": "Tema",
+    "dark": "Escuro",
+    "light": "Claro"
+  },
+  "lang": {
+    "label": "Idioma",
+    "pt-BR": "Português (BR)",
+    "en-US": "English (US)"
+  },
+  "health": {
+    "checking": "Verificando sistema...",
+    "ok": "Sistema pronto ({device})",
+    "degraded": "Atenção: verifique dependências",
+    "offline": "Servidor indisponível"
+  },
+  "banner": {
+    "dismiss": "Fechar"
+  },
+  "modal": {
+    "defaultTitle": "Confirmar ação",
+    "confirm": "Confirmar",
+    "cancel": "Cancelar"
+  },
+  "home": {
+    "heading": "Karaokê Local",
+    "subtitle": "Cole um link ou ID de 11 caracteres do YouTube para preparar, ou escolha uma música pronta abaixo.",
+    "inputPlaceholder": "Ex.: https://www.youtube.com/watch?v=z2ZmXRkXREw ou z2ZmXRkXREw",
+    "prepareBtn": "Preparar música",
+    "invalidVideoId": "Informe um link válido do YouTube ou um ID de 11 caracteres.",
+    "cachedHeading": "Músicas prontas no cache local ({count})",
+    "noCachedSongs": "Nenhuma música pronta no cache ainda. Prepare uma acima!",
+    "singBtn": "Cantar",
+    "lyricsSynced": "Letra sincronizada",
+    "lyricsPlain": "Letra sem tempo",
+    "lyricsNone": "Sem letra"
+  },
+  "prepare": {
+    "title": "Preparando música: {videoId}",
+    "queued": "Na fila (posição {position})...",
+    "running": "Processando etapa: {step} ({percent}%)",
+    "ready": "Música pronta! Abrindo palco...",
+    "canceled": "Preparo cancelado.",
+    "failed": "Falha ao preparar a música: {reason}",
+    "cancelBtn": "Cancelar preparo",
+    "retryBtn": "Tentar novamente",
+    "backBtn": "Voltar"
+  },
+  "play": {
+    "backBtn": "Sair",
+    "leaveTitle": "Sair do palco?",
+    "leaveMsg": "A reprodução atual será interrompida e você voltará para o início.",
+    "loadingAudio": "Carregando faixas de áudio...",
+    "playBtn": "Tocar",
+    "pauseBtn": "Pausar",
+    "restartBtn": "Reiniciar",
+    "instrumentalVol": "Instrumental",
+    "vocalsVol": "Voz Guia",
+    "lyricsOffset": "Sincronia letra",
+    "lyricsSelectLabel": "Versão da letra",
+    "noLyricsCandidate": "Sem letra",
+    "videoUnavailable": "Vídeo do YouTube indisponível (modo áudio/letra)",
+    "instrumentalMode": "Modo instrumental (nenhuma letra sincronizada encontrada)",
+    "plainLyricsBadge": "Letra sem marcação de tempo (rolagem livre)",
+    "waitingIntro": "Aguardando início da voz...",
+    "micOnBtn": "Microfone Ativo",
+    "micOffBtn": "Ativar Microfone",
+    "micUnavailable": "Não foi possível abrir o microfone",
+    "noPitchData": "Sem melodia vocal de referência para esta faixa",
+    "hitIdle": "Aguardando voz",
+    "hitFree": "Trecho livre",
+    "hitPerfect": "Perfeito!",
+    "hitGreat": "Ótimo!",
+    "hitGood": "Bom",
+    "hitMiss": "Ajuste o tom"
+  },
+  "settings": {
+    "title": "Configurações de Áudio e Microfone",
+    "subtitle": "Escolha o microfone, teste a captação de notas em tempo real e calibre a compensação de latência.",
+    "micDeviceLabel": "Dispositivo de entrada (Microfone)",
+    "micDeviceDesc": "Selecione o microfone usado para cantar. Os nomes completos aparecem após ativar o teste.",
+    "micDefaultOption": "Microfone padrão do sistema",
+    "refreshDevicesBtn": "Atualizar lista",
+    "startMicTestBtn": "Ativar teste de microfone",
+    "stopMicTestBtn": "Parar teste",
+    "micIdleStatus": "Microfone desligado — clique em 'Ativar teste de microfone' para testar.",
+    "micActiveStatus": "Captando áudio ao vivo (filtros AEC/AGC desativados).",
+    "inputGainLabel": "Ganho de entrada do microfone",
+    "inputGainDesc": "Aumente se o sinal estiver muito baixo no medidor acima.",
+    "noiseGateLabel": "Filtro de ruído ambiente (Gate)",
+    "noiseGateDesc": "Sinais abaixo da linha amarela no medidor são ignorados.",
+    "latencyHeading": "Calibração de Latência",
+    "latencyDesc": "Compensa o atraso entre o áudio tocado nas caixas e a chegada da sua voz no navegador.",
+    "latencyManualLabel": "Compensação de latência (ms)",
+    "latencyManualDesc": "Valores positivos descontam o atraso de entrada do microfone.",
+    "autoCalibTitle": "Assistente automático (4 bips)",
+    "autoCalibDesc": "Aproxime o microfone da caixa de som e clique para medir o atraso automaticamente.",
+    "autoCalibBtn": "Medir latência automaticamente",
+    "autoCalibProgress": "Emitindo bip {current} de {total}...",
+    "autoCalibSuccess": "Latência medida: {ms} ms ({valid}/{total} bips detectados) e aplicada!",
+    "autoCalibNoPeak": "Nenhum bip detectado pelo microfone. Aproxime o microfone da caixa ou ajuste manualmente.",
+    "stageDefaultsHeading": "Volumes Padrão do Palco",
+    "defaultInstLabel": "Volume inicial do Instrumental",
+    "defaultVocalsLabel": "Volume inicial da Voz Guia",
+    "resetDefaultsBtn": "Restaurar padrões",
+    "resetConfirmTitle": "Restaurar configurações de áudio?",
+    "resetConfirmMsg": "O ganho, filtro de ruído, latência e volumes padrão voltarão aos valores originais.",
+    "resetDone": "Configurações de áudio restauradas."
+  },
+  "routes": {
+    "resultTitle": "Resultado da Sessão: {sessionId}",
+    "resultDesc": "O placar detalhado e histórico de sessões serão implementados na Fase 3.",
+    "historyTitle": "Histórico e Músicas em Cache",
+    "historyDesc": "A listagem completa e filtros de histórico serão construídos na Fase 4.",
+    "notFoundTitle": "Página não encontrada",
+    "notFoundDesc": "A rota acessada não existe.",
+    "backHome": "Voltar ao início"
+  }
+}

@@ -1,0 +1,67 @@
+/* Tokens visuais e temas (FRONTEND_ARCHITECTURE.md) */
+
+:root,
+:root[data-theme="dark"] {
+  --bg-app: #0d1017;
+  --bg-surface: #161b26;
+  --bg-surface-elevated: #1f2636;
+  --bg-input: #10141d;
+  --border-subtle: #293246;
+  --border-strong: #3d4a66;
+
+  --text-primary: #f3f6fc;
+  --text-secondary: #b0bdd4;
+  --text-muted: #76849e;
+
+  --accent-primary: #6c5ce7;
+  --accent-primary-hover: #7d6ff0;
+  --accent-secondary: #00cec9;
+
+  --status-success: #2ecc71;
+  --status-success-bg: rgba(46, 204, 113, 0.14);
+  --status-warning: #f1c40f;
+  --status-warning-bg: rgba(241, 196, 15, 0.14);
+  --status-error: #ff5e57;
+  --status-error-bg: rgba(255, 94, 87, 0.15);
+  --status-info: #3498db;
+  --status-info-bg: rgba(52, 152, 219, 0.15);
+
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.55);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+:root[data-theme="light"] {
+  --bg-app: #f4f6fb;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #eef2f9;
+  --bg-input: #ffffff;
+  --border-subtle: #d6deeb;
+  --border-strong: #b4c1d6;
+
+  --text-primary: #141923;
+  --text-secondary: #435066;
+  --text-muted: #6e7d96;
+
+  --accent-primary: #5748d6;
+  --accent-primary-hover: #4637c4;
+  --accent-secondary: #009692;
+
+  --status-success: #1e9e54;
+  --status-success-bg: rgba(30, 158, 84, 0.12);
+  --status-warning: #b78a00;
+  --status-warning-bg: rgba(241, 196, 15, 0.18);
+  --status-error: #d63031;
+  --status-error-bg: rgba(214, 48, 49, 0.12);
+  --status-info: #1f78b4;
+  --status-info-bg: rgba(31, 120, 180, 0.12);
+
+  --shadow-md: 0 4px 14px rgba(20, 25, 35, 0.08);
+  --shadow-lg: 0 12px 30px rgba(20, 25, 35, 0.16);
+}
