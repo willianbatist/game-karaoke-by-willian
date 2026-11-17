@@ -2,6 +2,9 @@ node_modules/
 backend/cache/
 backend/data/
 worker/.venv/
+worker/models/
+worker/accelerator_profile.json
+scripts/spike-report.json
 __pycache__/
 *.pyc
 .env
