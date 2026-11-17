@@ -1,0 +1,42 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 3000,
+    "sse_heartbeat_seconds": 15
+  },
+  "cache": {
+    "max_size_gb": 10,
+    "audio_format": "flac"
+  },
+  "worker": {
+    "contract_version": 1,
+    "separation_model": "UVR_MDXNET_KARA_2.onnx",
+    "pitch_extractor": "pyin",
+    "pitch_hop_seconds": 0.02,
+    "step_timeout_seconds": 600
+  },
+  "audio": {
+    "highpass_hz": 80,
+    "lowpass_hz": 1200,
+    "clarity_on": 0.85,
+    "clarity_off": 0.70,
+    "pitch_conf_threshold": 0.12,
+    "hold_ms": 130,
+    "median_window": 3,
+    "youtube_drift_ms": 300,
+    "youtube_embed_domain": "youtube.com"
+  },
+  "tolerances": {
+    "easy": { "full": 1.0, "half": 2.0 },
+    "normal": { "full": 0.8, "half": 1.8 },
+    "hard": { "full": 0.5, "half": 1.2 }
+  },
+  "analysis": {
+    "instrumental_vocal_energy_ratio": 0.05,
+    "jump_semitones": 3
+  },
+  "search": {
+    "results": 12,
+    "lyrics_timeout_ms": 1500
+  }
+}

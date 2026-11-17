@@ -1,0 +1,1 @@
+audio-separator[rocm]>=0.24.0

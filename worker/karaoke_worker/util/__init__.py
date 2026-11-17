@@ -1,0 +1,1 @@
+"""Utilitários internos do Worker (eventos JSON Lines e diagnóstico de hardware)."""

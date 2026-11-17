@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "weights": {
+    "voiced_ratio": 0.25,
+    "mean_confidence": 0.15,
+    "vocal_energy_ratio": 0.05,
+    "bleed_estimate": 0.20,
+    "backing_vocals_estimate": 0.15,
+    "pitch_stability": 0.10,
+    "lyrics_sync_quality": 0.10
+  },
+  "thresholds": {
+    "excellent": 0.78,
+    "good": 0.62,
+    "regular": 0.48,
+    "low": 0.30
+  },
+  "incompatible_rules": {
+    "min_voiced_ratio": 0.05
+  },
+  "reason_threshold": 0.45,
+  "lyrics_sync_quality": {
+    "best_delta_s": 2,
+    "worst_delta_s": 15,
+    "synced_best": 1.0,
+    "synced_worst": 0.4,
+    "plain": 0.3,
+    "none": 0.0
+  },
+  "pre_analysis": {
+    "keyword_penalties": {
+      "ao vivo": 0.15,
+      "live": 0.15,
+      "acústico": 0.10,
+      "acoustic": 0.10,
+      "remix": 0.20,
+      "cover": 0.20,
+      "karaoke": 0.40,
+      "instrumental": 0.60,
+      "mashup": 0.30,
+      "playlist": 0.40,
+      "loop": 0.30
+    },
+    "duration_min_s": 45,
+    "duration_max_s": 480,
+    "duration_penalty": 0.30,
+    "lyrics_missing_penalty": 0.15,
+    "duration_mismatch": {
+      "tolerance_s": 5,
+      "penalty": 0.15
+    }
+  }
+}

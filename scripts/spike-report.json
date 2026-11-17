@@ -1,0 +1,241 @@
+{
+  "generatedAt": "2026-11-17T14:01:37.038Z",
+  "totalSongs": 7,
+  "succeeded": 7,
+  "failed": 0,
+  "results": [
+    {
+      "videoId": "z2ZmXRkXREw",
+      "category": "MPB - Estúdio",
+      "ok": true,
+      "title": "Marina Sena - Numa Ilha (Clipe Oficial)",
+      "channel": "Marina Sena",
+      "duration": 267,
+      "deviceUsed": "cpu",
+      "elapsedSeconds": 100.51,
+      "stepSeconds": {
+        "download": 3.08,
+        "separate": 88.31,
+        "pitch": 6.35,
+        "analyze": 0.54,
+        "package": 0.87
+      },
+      "pitchMode": "reference",
+      "metrics": {
+        "voiced_ratio": 0.7064,
+        "mean_confidence": 0.5889,
+        "vocal_energy_ratio": 0.1779,
+        "bleed_estimate": 0.0258,
+        "backing_vocals_estimate": 0.1077,
+        "pitch_stability": 0.9982
+      },
+      "preliminaryAcousticCompatibility": {
+        "level": "excellent",
+        "score": 0.7804,
+        "note": ""
+      },
+      "warnings": [],
+      "cacheDir": "backend/cache/z2ZmXRkXREw"
+    },
+    {
+      "videoId": "5iUoik-9hVI",
+      "category": "Sertanejo - Estúdio",
+      "ok": true,
+      "title": "Gustavo Mioto - Contramão",
+      "channel": "Gustavo Mioto",
+      "duration": 191,
+      "deviceUsed": "cpu",
+      "elapsedSeconds": 71.32,
+      "stepSeconds": {
+        "download": 2.36,
+        "separate": 62.38,
+        "pitch": 4.61,
+        "analyze": 0.4,
+        "package": 0.68
+      },
+      "pitchMode": "reference",
+      "metrics": {
+        "voiced_ratio": 0.5589,
+        "mean_confidence": 0.4056,
+        "vocal_energy_ratio": 0.2733,
+        "bleed_estimate": 0.1301,
+        "backing_vocals_estimate": 0.2493,
+        "pitch_stability": 0.9969
+      },
+      "preliminaryAcousticCompatibility": {
+        "level": "good",
+        "score": 0.6672,
+        "note": ""
+      },
+      "warnings": [],
+      "cacheDir": "backend/cache/5iUoik-9hVI"
+    },
+    {
+      "videoId": "zKAAFsovtM4",
+      "category": "Pagode - Com coros",
+      "ok": true,
+      "title": "Churrasquinho do Menos é Mais - Melhor eu ir/Ligando os Fatos/Sonho de Amor/Deixa eu te querer",
+      "channel": "Grupo Menos é Mais",
+      "duration": 525,
+      "deviceUsed": "cpu",
+      "elapsedSeconds": 183.71,
+      "stepSeconds": {
+        "download": 3.82,
+        "separate": 163.74,
+        "pitch": 12.64,
+        "analyze": 1,
+        "package": 1.64
+      },
+      "pitchMode": "reference",
+      "metrics": {
+        "voiced_ratio": 0.5656,
+        "mean_confidence": 0.3968,
+        "vocal_energy_ratio": 0.2306,
+        "bleed_estimate": 0.2678,
+        "backing_vocals_estimate": 0.3245,
+        "pitch_stability": 0.9934
+      },
+      "preliminaryAcousticCompatibility": {
+        "level": "good",
+        "score": 0.6217,
+        "note": ""
+      },
+      "warnings": [],
+      "cacheDir": "backend/cache/zKAAFsovtM4"
+    },
+    {
+      "videoId": "M4uG1MmZVl0",
+      "category": "Rock Nacional - Estúdio",
+      "ok": true,
+      "title": "Tempo Perdido",
+      "channel": "Legião Urbana",
+      "duration": 302,
+      "deviceUsed": "cpu",
+      "elapsedSeconds": 108.99,
+      "stepSeconds": {
+        "download": 2.48,
+        "separate": 96.87,
+        "pitch": 7.19,
+        "analyze": 0.6,
+        "package": 0.97
+      },
+      "pitchMode": "reference",
+      "metrics": {
+        "voiced_ratio": 0.2661,
+        "mean_confidence": 0.1429,
+        "vocal_energy_ratio": 0.2206,
+        "bleed_estimate": 0.2077,
+        "backing_vocals_estimate": 0.6805,
+        "pitch_stability": 0.9913
+      },
+      "preliminaryAcousticCompatibility": {
+        "level": "low",
+        "score": 0.4495,
+        "note": ""
+      },
+      "warnings": [],
+      "cacheDir": "backend/cache/M4uG1MmZVl0"
+    },
+    {
+      "videoId": "qrO4YZeyl0I",
+      "category": "Pop - Estúdio",
+      "ok": true,
+      "title": "Lady Gaga - Bad Romance (Official Music Video)",
+      "channel": "Lady Gaga",
+      "duration": 308,
+      "deviceUsed": "cpu",
+      "elapsedSeconds": 111.27,
+      "stepSeconds": {
+        "download": 3.06,
+        "separate": 98.44,
+        "pitch": 7.33,
+        "analyze": 0.59,
+        "package": 1.01
+      },
+      "pitchMode": "reference",
+      "metrics": {
+        "voiced_ratio": 0.2638,
+        "mean_confidence": 0.2475,
+        "vocal_energy_ratio": 0.1167,
+        "bleed_estimate": 0.1741,
+        "backing_vocals_estimate": 0.5271,
+        "pitch_stability": 0.9946
+      },
+      "preliminaryAcousticCompatibility": {
+        "level": "regular",
+        "score": 0.4939,
+        "note": ""
+      },
+      "warnings": [],
+      "cacheDir": "backend/cache/qrO4YZeyl0I"
+    },
+    {
+      "videoId": "htc1z4Uv0HA",
+      "category": "Ao vivo",
+      "ok": true,
+      "title": "Gustavo Mioto - COM OU SEM MIM - DVD Ao Vivo Em Fortaleza",
+      "channel": "Gustavo Mioto",
+      "duration": 200,
+      "deviceUsed": "cpu",
+      "elapsedSeconds": 74.44,
+      "stepSeconds": {
+        "download": 2.74,
+        "separate": 65.08,
+        "pitch": 4.64,
+        "analyze": 0.42,
+        "package": 0.68
+      },
+      "pitchMode": "reference",
+      "metrics": {
+        "voiced_ratio": 0.3865,
+        "mean_confidence": 0.3124,
+        "vocal_energy_ratio": 0.2378,
+        "bleed_estimate": 0.0449,
+        "backing_vocals_estimate": 0.3599,
+        "pitch_stability": 0.9942
+      },
+      "preliminaryAcousticCompatibility": {
+        "level": "regular",
+        "score": 0.602,
+        "note": ""
+      },
+      "warnings": [],
+      "cacheDir": "backend/cache/htc1z4Uv0HA"
+    },
+    {
+      "videoId": "l3Jib3TZQzI",
+      "category": "Instrumental / Karaokê",
+      "ok": true,
+      "title": "KARAOKÊ - INFIEL - MARÍLIA MENDONÇA",
+      "channel": "Karaokê Viny Teclas",
+      "duration": 202,
+      "deviceUsed": "cpu",
+      "elapsedSeconds": 74.91,
+      "stepSeconds": {
+        "download": 2.66,
+        "separate": 65.49,
+        "pitch": 4.72,
+        "analyze": 0.43,
+        "package": 0.69
+      },
+      "pitchMode": "heuristic",
+      "metrics": {
+        "voiced_ratio": 0.0009,
+        "mean_confidence": 0.0117,
+        "vocal_energy_ratio": 0.0004,
+        "bleed_estimate": 1,
+        "backing_vocals_estimate": 0.999,
+        "pitch_stability": 0.9765
+      },
+      "preliminaryAcousticCompatibility": {
+        "level": "incompatible",
+        "score": 0,
+        "note": "Modo heurístico (instrumental)"
+      },
+      "warnings": [
+        "LOW_VOCAL_ENERGY: Energia vocal muito baixa (0.0004). Gabarito alterado para modo heurístico."
+      ],
+      "cacheDir": "backend/cache/l3Jib3TZQzI"
+    }
+  ]
+}

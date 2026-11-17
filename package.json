@@ -1,0 +1,15 @@
+{
+  "name": "game-karaoke-by-willian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Jogo web de karaokê local com separação vocal por IA e pontuação em tempo real",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node backend/server.js",
+    "doctor": "node scripts/doctor.js",
+    "test": "node --test"
+  }
+}

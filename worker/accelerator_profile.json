@@ -1,0 +1,8 @@
+{
+  "profile": "cpu",
+  "python_version": "3.12.16",
+  "python_executable": "/home/will/dev/game-karaoke-by-willian/worker/.venv/bin/python",
+  "separation_model": "UVR_MDXNET_KARA_2.onnx",
+  "models_dir": "worker/models",
+  "installed_at": "2026-11-17T00:03:54.647778+00:00"
+}
