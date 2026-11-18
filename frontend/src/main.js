@@ -1,68 +1,32 @@
 /**
- * Bootstrap da aplicação frontend (T2.2).
+ * Bootstrap da aplicação frontend (T4.5).
  */
 
 import { api } from "./api.js";
 import { getLocale, initI18n, setLocale, t } from "./i18n.js";
+import { playerStore } from "./players/playerStore.js";
 import { initRouter, navigate, registerRouteRenderer, renderCurrentRoute } from "./router.js";
 import { getState, setState, setTheme, showBanner, subscribe } from "./store.js";
 import { initBanner } from "./ui/banner.js";
 import { initConfirmModal } from "./ui/confirmModal.js";
+import { renderHomeView } from "./views/homeView.js";
 import { renderPlayView } from "./views/playView.js";
+import { renderPregameView } from "./views/pregameView.js";
 import { renderPrepareView } from "./views/prepareView.js";
 import { renderResultView } from "./views/resultView.js";
+import { renderSearchView } from "./views/searchView.js";
 import { renderSettingsView } from "./views/settingsView.js";
-
-function extractYouTubeVideoId(rawInput) {
-  const value = String(rawInput || "").trim();
-  if (/^[A-Za-z0-9_-]{11}$/.test(value)) {
-    return value;
-  }
-
-  try {
-    const url = new URL(value);
-    if (url.hostname === "youtu.be") {
-      const id = url.pathname.replace(/^\//, "").slice(0, 11);
-      return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
-    }
-    if (url.hostname.endsWith("youtube.com")) {
-      const vParam = url.searchParams.get("v");
-      if (vParam && /^[A-Za-z0-9_-]{11}$/.test(vParam)) {
-        return vParam;
-      }
-      const match = /^\/(?:embed|shorts|v)\/([A-Za-z0-9_-]{11})/.exec(url.pathname);
-      if (match) return match[1];
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function formatDuration(sec) {
-  const total = Math.max(0, Math.floor(Number(sec) || 0));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function escapeHtml(text) {
-  return String(text || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
 
 function renderStaticChrome() {
   const brandTitle = document.getElementById("brand-title");
   if (brandTitle) brandTitle.textContent = t("app.title");
 
   const navHome = document.getElementById("nav-home");
+  const navLibrary = document.getElementById("nav-library");
   const navHistory = document.getElementById("nav-history");
   const navSettings = document.getElementById("nav-settings");
   if (navHome) navHome.textContent = t("nav.home");
+  if (navLibrary) navLibrary.textContent = "Biblioteca";
   if (navHistory) navHistory.textContent = t("nav.history");
   if (navSettings) navSettings.textContent = t("nav.settings");
 
@@ -110,117 +74,56 @@ function renderHealthBadge(health) {
 }
 
 function registerViews() {
-  registerRouteRenderer("home", (container) => {
-    const songs = getState().songs || [];
-
-    const cardsHtml =
-      songs.length === 0
-        ? `<p class="muted">${t("home.noCachedSongs")}</p>`
-        : `<div class="song-grid">
-            ${songs
-              .map((song) => {
-                const lyrType = song.lyrics?.type || "none";
-                const pillLabel =
-                  lyrType === "synced"
-                    ? t("home.lyricsSynced")
-                    : lyrType === "plain"
-                      ? t("home.lyricsPlain")
-                      : t("home.lyricsNone");
-                const pillClass = lyrType === "synced" ? "pill synced" : "pill";
-
-                return `
-                  <article class="song-card">
-                    <div>
-                      <h3 class="song-card-title">${escapeHtml(song.title)}</h3>
-                      <div class="song-card-meta">
-                        <span>${escapeHtml(song.channel)}</span>
-                        <span>• ${formatDuration(song.duration)}</span>
-                        <span class="${pillClass}">${pillLabel}</span>
-                      </div>
-                    </div>
-                    <div style="display: flex; justify-content: flex-end;">
-                      <button
-                        type="button"
-                        class="btn btn-primary"
-                        data-sing-id="${escapeHtml(song.videoId)}"
-                      >
-                        ${t("home.singBtn")}
-                      </button>
-                    </div>
-                  </article>
-                `;
-              })
-              .join("")}
-          </div>`;
-
-    container.innerHTML = `
-      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-        <section class="card">
-          <h1>${t("home.heading")}</h1>
-          <p class="muted">${t("home.subtitle")}</p>
-          <form id="home-prepare-form" class="prepare-form">
-            <input
-              type="text"
-              id="home-video-input"
-              class="text-input"
-              placeholder="${escapeHtml(t("home.inputPlaceholder"))}"
-              required
-            />
-            <button type="submit" class="btn btn-primary">
-              ${t("home.prepareBtn")}
-            </button>
-          </form>
-        </section>
-
-        <section class="card">
-          <h2>${t("home.cachedHeading", { count: songs.length })}</h2>
-          ${cardsHtml}
-        </section>
-      </div>
-    `;
-
-    container.querySelector("#home-prepare-form")?.addEventListener("submit", (evt) => {
-      evt.preventDefault();
-      const input = container.querySelector("#home-video-input");
-      const videoId = extractYouTubeVideoId(input?.value);
-      if (!videoId) {
-        showBanner("warning", t("home.invalidVideoId"));
-        return;
-      }
-      navigate(`/prepare/${encodeURIComponent(videoId)}`);
-    });
-
-    for (const btn of container.querySelectorAll("[data-sing-id]")) {
-      btn.addEventListener("click", () => {
-        const id = btn.getAttribute("data-sing-id");
-        if (id) navigate(`/play/${encodeURIComponent(id)}`);
-      });
-    }
-  });
-
+  registerRouteRenderer("home", renderHomeView);
+  registerRouteRenderer("search", renderSearchView);
   registerRouteRenderer("prepare", renderPrepareView);
+  registerRouteRenderer("pregame", renderPregameView);
   registerRouteRenderer("play", renderPlayView);
   registerRouteRenderer("result", renderResultView);
   registerRouteRenderer("settings", renderSettingsView);
 
+  registerRouteRenderer("library", (container) => {
+    container.replaceChildren();
+    const card = document.createElement("section");
+    card.className = "card";
+    const h2 = document.createElement("h2");
+    h2.textContent = "Biblioteca";
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "A gestão completa da biblioteca será finalizada na etapa T4.6.";
+    card.append(h2, p);
+    container.appendChild(card);
+  });
+
   registerRouteRenderer("history", (container) => {
-    container.innerHTML = `
-      <section class="card">
-        <h2>${t("routes.historyTitle")}</h2>
-        <p class="muted">${t("routes.historyDesc")}</p>
-      </section>
-    `;
+    container.replaceChildren();
+    const card = document.createElement("section");
+    card.className = "card";
+    const h2 = document.createElement("h2");
+    h2.textContent = t("routes.historyTitle");
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = t("routes.historyDesc");
+    card.append(h2, p);
+    container.appendChild(card);
   });
 
   registerRouteRenderer("notFound", (container) => {
-    container.innerHTML = `
-      <section class="card">
-        <h2>${t("routes.notFoundTitle")}</h2>
-        <p class="muted">${t("routes.notFoundDesc")}</p>
-        <button type="button" class="btn btn-primary" id="btn-back-home">${t("routes.backHome")}</button>
-      </section>
-    `;
-    container.querySelector("#btn-back-home")?.addEventListener("click", () => navigate("/"));
+    container.replaceChildren();
+    const card = document.createElement("section");
+    card.className = "card";
+    const h2 = document.createElement("h2");
+    h2.textContent = t("routes.notFoundTitle");
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = t("routes.notFoundDesc");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-primary";
+    btn.textContent = t("routes.backHome");
+    btn.addEventListener("click", () => navigate("/"));
+    card.append(h2, p, btn);
+    container.appendChild(card);
   });
 }
 
@@ -228,14 +131,15 @@ async function refreshSongsList() {
   const songsData = await api.getSongs();
   const songs = Array.isArray(songsData?.songs) ? songsData.songs : [];
   setState({ songs, songsCount: songs.length });
-  if (getState().route.name === "home") {
-    renderCurrentRoute();
-  }
 }
 
 async function loadInitialBackendData() {
   try {
-    const [config] = await Promise.all([api.getConfig(), refreshSongsList()]);
+    const [config] = await Promise.all([
+      api.getConfig(),
+      refreshSongsList(),
+      playerStore.loadPlayers().catch(() => []),
+    ]);
     setState({ config });
   } catch (err) {
     showBanner("error", err.message);

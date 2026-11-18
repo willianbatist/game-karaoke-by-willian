@@ -1,21 +1,23 @@
 /**
- * Tela de Resultado (#/result/:sessionId) — T3.4:
- * - Exibe nota final (0.0 a 10.0) com classificação motivacional
+ * Tela de Resultado (#/result/:sessionId) — T3.4 + T4.4:
+ * - Exibe nota final (0.0 a 10.0) com classificação motivacional via standardMode.summary()
+ * - Exibe status de sincronização com o histórico (salvo no servidor ou na fila local offline)
  * - Gráfico temporal de desempenho por trecho da música (`details.segments`)
  * - Estatísticas da partida: melhor sequência (streak), cobertura vocal e assistências
  * - Indicador de confiança da nota (`scoring_confidence` / `compatibility_level`)
- * - Botões de ação: Cantar novamente, Escolher outra música e Histórico
  */
 
+import { standardMode } from "../game/modes/standard.js";
+import { historyClient } from "../history/historyClient.js";
 import { navigate } from "../router.js";
 import { getState } from "../store.js";
 
 const RESULT_CACHE_PREFIX = "karaoke.result.";
 
 function saveResultSnapshot(entry) {
-  if (!entry || !entry.id || typeof localStorage === "undefined") return;
+  if (!entry || !entry.id || typeof window === "undefined" || !window.localStorage) return;
   try {
-    localStorage.setItem(`${RESULT_CACHE_PREFIX}${entry.id}`, JSON.stringify(entry));
+    window.localStorage.setItem(`${RESULT_CACHE_PREFIX}${entry.id}`, JSON.stringify(entry));
   } catch {
     // Ignora limite de armazenamento
   }
@@ -28,9 +30,9 @@ function loadResultSnapshot(sessionId) {
     return fromState;
   }
 
-  if (sessionId && typeof localStorage !== "undefined") {
+  if (sessionId && typeof window !== "undefined" && window.localStorage) {
     try {
-      const raw = localStorage.getItem(`${RESULT_CACHE_PREFIX}${sessionId}`);
+      const raw = window.localStorage.getItem(`${RESULT_CACHE_PREFIX}${sessionId}`);
       if (raw) return JSON.parse(raw);
     } catch {
       return null;
@@ -53,24 +55,6 @@ function formatDifficultyLabel(diff) {
   return "Normal";
 }
 
-function classifyScore(score) {
-  const val = Number(score) || 0;
-  if (val >= 8.5) {
-    return { tier: "excellent", verdict: "Performance brilhante!" };
-  }
-  if (val >= 6.5) {
-    return { tier: "good", verdict: "Ótima interpretação!" };
-  }
-  if (val >= 4.0) {
-    return { tier: "fair", verdict: "Bom aquecimento!" };
-  }
-  return { tier: "starter", verdict: "Continue praticando!" };
-}
-
-/**
- * Normaliza cada elemento de `segments` para uma nota no intervalo [0, 10]
- * (aceita tanto valores em [0, 1] quanto [0, 10] ou objetos { score / accuracy }).
- */
 function normalizeSegmentScore(rawSeg) {
   if (rawSeg === null || rawSeg === undefined) return null;
   let numeric = null;
@@ -97,7 +81,7 @@ function buildConfidenceBanner(entry) {
 
   const text = document.createElement("div");
 
-  if (confidence === "low" || compat === "low" || compat === "instrumental") {
+  if (confidence === "low" || compat === "low" || compat === "incompatible") {
     alert.dataset.level = "low";
     icon.textContent = "▲";
     text.textContent =
@@ -245,8 +229,13 @@ export function renderResultView(container, params) {
     return;
   }
 
-  const scoreNum = Math.max(0, Math.min(10, Number(entry.score) || 0));
-  const { tier, verdict } = classifyScore(scoreNum);
+  const modeSummary = standardMode.summary({
+    entry,
+    persistence: getState().lastResultPersistence || null,
+  });
+
+  const scoreNum = modeSummary.score;
+  const { tier, verdict } = modeSummary;
   const details = entry.details || {};
   const assists = entry.assists || {};
 
@@ -300,6 +289,28 @@ export function renderResultView(container, params) {
     badgesRow.appendChild(guidePill);
   }
 
+  // Indicador de persistência no histórico (sincronizado vs fila local offline)
+  const syncPill = document.createElement("span");
+  syncPill.className = "pill";
+  const updateSyncPill = () => {
+    const isPending = historyClient
+      .getPendingEntries()
+      .some((item) => item?.id === entry.id);
+    if (isPending) {
+      syncPill.textContent = "Salvo localmente (aguardando servidor)";
+    } else if (modeSummary.persistence?.skipped) {
+      syncPill.textContent = "Partida não registrada no histórico";
+    } else {
+      syncPill.textContent = "Salvo no histórico";
+    }
+  };
+  updateSyncPill();
+  badgesRow.appendChild(syncPill);
+
+  const unsubscribePending = historyClient.subscribePending(() => {
+    updateSyncPill();
+  });
+
   metaCol.append(kicker, songTitle, artistSub, badgesRow);
 
   const scoreBox = document.createElement("div");
@@ -308,7 +319,7 @@ export function renderResultView(container, params) {
 
   const scoreVal = document.createElement("div");
   scoreVal.className = "result-score-value";
-  scoreVal.textContent = scoreNum.toFixed(1);
+  scoreVal.textContent = modeSummary.scoreFormatted;
 
   const scoreScale = document.createElement("div");
   scoreScale.className = "result-score-scale";
@@ -329,9 +340,9 @@ export function renderResultView(container, params) {
   const statsGrid = document.createElement("section");
   statsGrid.className = "result-stats-grid";
 
-  const bestStreakFrames = Math.max(0, Math.round(Number(details.best_streak) || 0));
+  const bestStreakFrames = modeSummary.bestStreak;
   const bestStreakSec = (bestStreakFrames * 0.02).toFixed(1);
-  const coveragePct = Math.round(Math.max(0, Math.min(1, Number(details.coverage) || 0)) * 100);
+  const coveragePct = Math.round(modeSummary.coverage * 100);
 
   const statItems = [
     {
@@ -407,4 +418,8 @@ export function renderResultView(container, params) {
 
   shell.appendChild(actionsBar);
   container.appendChild(shell);
+
+  return () => {
+    unsubscribePending();
+  };
 }

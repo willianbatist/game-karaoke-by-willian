@@ -1,8 +1,8 @@
 /**
- * Tela de Jogo Completa (#/play/:videoId) — T3.3:
+ * Tela de Jogo Completa (#/play/:videoId) — T3.3 + T4.4:
  * - AudioEngine (relógio mestre) + LyricSync + YouTubePlayer escravo mudo
  * - Pista de Afinação (pitchLane.js) com dobramento de oitava
- * - Motor de Pontuação (scoringEngine.js) + placar/sequência ao vivo
+ * - Motor de Pontuação (scoringEngine.js) + Sessão de Modo (session.js) + Histórico offline
  * - Medidor de microfone (micMeter.js) + detecção de vazamento e desconexão
  * - Contagem regressiva 3-2-1, Menu de Pausa, atalhos (Espaço, Esc, F, Setas) e Wake Lock
  */
@@ -12,49 +12,15 @@ import { createAudioEngine } from "../audio/audioEngine.js";
 import { createMicCapture } from "../audio/micCapture.js";
 import { midiToNoteName } from "../audio/yinDetector.js";
 import { createScoringEngine } from "../game/scoringEngine.js";
+import { createGameSession, loadGamePrefs } from "../game/session.js";
 import { t } from "../i18n.js";
 import { createLyricSync } from "../player/lyricSync.js";
 import { createYouTubePlayer } from "../player/youtubePlayer.js";
 import { navigate } from "../router.js";
-import { getAudioSettings, getState, setState, showBanner } from "../store.js";
+import { getAudioSettings, getState, showBanner } from "../store.js";
 import { createMicMeter } from "../ui/components/micMeter.js";
 import { createPitchLane } from "../ui/components/pitchLane.js";
 import { confirmDialog } from "../ui/confirmModal.js";
-
-const PREFS_STORAGE_KEY = "karaoke.prefs.v1";
-
-function loadGamePrefs() {
-  try {
-    const raw = localStorage.getItem(PREFS_STORAGE_KEY);
-    if (!raw) {
-      return {
-        difficulty: "normal",
-        showVideo: true,
-        countdownSeconds: 3,
-        showPartialScore: true,
-        autoTranspose: false,
-      };
-    }
-    const parsed = JSON.parse(raw);
-    return {
-      difficulty: ["easy", "normal", "hard"].includes(parsed.difficulty)
-        ? parsed.difficulty
-        : "normal",
-      showVideo: parsed.showVideo !== false,
-      countdownSeconds: Math.max(0, Math.min(5, Number(parsed.countdownSeconds ?? 3))),
-      showPartialScore: parsed.showPartialScore !== false,
-      autoTranspose: Boolean(parsed.autoTranspose ?? false),
-    };
-  } catch {
-    return {
-      difficulty: "normal",
-      showVideo: true,
-      countdownSeconds: 3,
-      showPartialScore: true,
-      autoTranspose: false,
-    };
-  }
-}
 
 function formatClock(totalSeconds) {
   const sec = Math.max(0, Math.floor(Number(totalSeconds) || 0));
@@ -87,6 +53,7 @@ export function renderPlayView(container, params) {
   let manifestData = null;
   let pitchMapData = null;
   let scoringEngine = null;
+  let gameSession = null;
   let songDurationSec = 0;
   let currentLatencyMs = Number(audioSettings.micLatencyMs) || 0;
   let currentDifficulty = prefs.difficulty;
@@ -351,7 +318,6 @@ export function renderPlayView(container, params) {
     bleedWarningDismissed = true;
   });
 
-  // Wake Lock API (FRONTEND_ARCHITECTURE.md §7.4)
   async function requestWakeLock() {
     try {
       if ("wakeLock" in navigator && !wakeLockSentinel) {
@@ -433,6 +399,27 @@ export function renderPlayView(container, params) {
     latencyOffsetMs: currentLatencyMs,
   });
 
+  function initOrResetSession() {
+    gameSession = createGameSession({
+      modeId: "standard",
+      player: getState().player,
+      song: {
+        videoId,
+        title: manifestData?.source?.title || videoId,
+        artist: manifestData?.source?.channel || "",
+        duration: songDurationSec || Number(manifestData?.source?.duration) || 0,
+        compatibilityLevel: manifestData?.compatibility?.level || "regular",
+      },
+      difficulty: currentDifficulty,
+      assists: {
+        autoTranspose: Boolean(prefs.autoTranspose),
+        guideVolume: Number(vocSlider?.value || initVocVol),
+      },
+      prefs,
+    });
+    gameSession.start();
+  }
+
   function buildScoringEngine() {
     scoringEngine = createScoringEngine({
       pitchMap: pitchMapData,
@@ -443,6 +430,7 @@ export function renderPlayView(container, params) {
       autoTranspose: prefs.autoTranspose,
       heuristicConfig: cfgHeuristic,
     });
+    initOrResetSession();
     liveScoreEl.textContent = "0.0";
     liveStreakEl.textContent = "0";
   }
@@ -464,10 +452,6 @@ export function renderPlayView(container, params) {
     }
   }
 
-  /**
-   * Renderiza a letra sincronizada ou plainLyrics usando apenas nós DOM e textContent
-   * (FRONTEND_ARCHITECTURE.md §4.2 e §15.4).
-   */
   function renderLyricsFrame(currentTimeSeconds) {
     if (pitchMapData?.mode === "heuristic") {
       if (lastRenderedLineIndex !== -30) {
@@ -614,7 +598,8 @@ export function renderPlayView(container, params) {
         sungNoteEl.textContent = "--";
         updateHitFeedback(null);
         if (isPlaying && scoringEngine) {
-          scoringEngine.pushFrame({ songTime, midi: null });
+          const evalRes = scoringEngine.pushFrame({ songTime, midi: null });
+          gameSession?.pushFrame(evalRes);
           pitchLane.pushUserFrame({ songTime, midi: null, hit: null });
         }
         return;
@@ -624,6 +609,7 @@ export function renderPlayView(container, params) {
 
       if (isPlaying && scoringEngine) {
         const evalRes = scoringEngine.pushFrame({ songTime, midi: frame.midi });
+        gameSession?.pushFrame(evalRes);
         updateHitFeedback(evalRes.hit);
         pitchLane.pushUserFrame({ songTime, midi: frame.midi, hit: evalRes.hit });
 
@@ -651,7 +637,6 @@ export function renderPlayView(container, params) {
     }
   }
 
-  // Hot-plug: se o microfone desconectar durante a partida, pausa imediatamente (ARCHITECTURE.md §8.2)
   function handleDeviceChange() {
     if (disposed) return;
     if (audioEngine.getState() === "playing" && micCapture.isActive()) {
@@ -663,7 +648,6 @@ export function renderPlayView(container, params) {
 
   navigator.mediaDevices?.addEventListener?.("devicechange", handleDeviceChange);
 
-  // Contagem regressiva 3 - 2 - 1 (FRONTEND_ARCHITECTURE.md §7.3)
   function stopCountdown() {
     if (countdownTimerId !== null) {
       clearInterval(countdownTimerId);
@@ -704,7 +688,6 @@ export function renderPlayView(container, params) {
     audioEngine.play().catch((err) => showBanner("error", err.message));
   });
 
-  // Menu de Pausa (FRONTEND_ARCHITECTURE.md §7.3 e §7.4)
   function openPauseMenu() {
     if (pauseMenuOpen) return;
     stopCountdown();
@@ -753,7 +736,6 @@ export function renderPlayView(container, params) {
     pauseLatVal.textContent = `${currentLatencyMs} ms`;
     pitchLane.setLatencyOffset(currentLatencyMs);
     if (scoringEngine) {
-      // Reconstrói o motor com a nova latência mantendo o progresso se ainda no início
       const snap = scoringEngine.summary();
       if (snap.coverage === 0) {
         buildScoringEngine();
@@ -775,6 +757,9 @@ export function renderPlayView(container, params) {
     vocSlider.value = String(val);
     vocValEl.textContent = `${Math.round(val * 100)}%`;
     audioEngine.setStemVolumes({ vocals: val });
+    if (gameSession?.getState()?.assists) {
+      gameSession.getState().assists.guideVolume = val;
+    }
   });
 
   pauseVideoToggle?.addEventListener("click", () => {
@@ -820,6 +805,18 @@ export function renderPlayView(container, params) {
         danger: true,
       });
       if (!ok) return;
+
+      if (gameSession && prefs.recordAbandoned && scoringEngine) {
+        try {
+          await gameSession.abort({
+            summary: scoringEngine.summary(),
+            durationSeconds: Math.round(audioEngine.getCurrentTime() || 0),
+            micDeviceId: audioSettings.micDeviceId,
+          });
+        } catch {
+          // Ignora falha ao gravar partida abandonada
+        }
+      }
     }
     navigate("/");
   }
@@ -827,7 +824,6 @@ export function renderPlayView(container, params) {
   exitBtn?.addEventListener("click", requestExitToHome);
   pauseExitBtn?.addEventListener("click", requestExitToHome);
 
-  // Tela Cheia (Fullscreen API — FRONTEND_ARCHITECTURE.md §7.4)
   function toggleFullscreen() {
     if (!document.fullscreenElement) {
       playShellEl?.requestFullscreen?.().catch(() => {});
@@ -838,7 +834,6 @@ export function renderPlayView(container, params) {
 
   fullscreenBtn?.addEventListener("click", toggleFullscreen);
 
-  // Atalhos de Teclado (FRONTEND_ARCHITECTURE.md §7.4)
   function handleKeyDown(ev) {
     if (disposed) return;
     const tag = ev.target?.tagName;
@@ -874,8 +869,8 @@ export function renderPlayView(container, params) {
 
   window.addEventListener("keydown", handleKeyDown);
 
-  // Finalização da música e transição para Tela de Resultado (#/result/:sessionId)
-  function finishSong() {
+  // Finalização da música via abstração de modos (T4.4) e transição para Tela de Resultado
+  async function finishSong() {
     if (songFinished || disposed) return;
     songFinished = true;
     stopCountdown();
@@ -892,49 +887,32 @@ export function renderPlayView(container, params) {
           transposition_semitones: 0,
         };
 
-    const entryId =
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `res_${Date.now()}`;
+    if (!gameSession) {
+      initOrResetSession();
+    }
 
-    const activePlayer = getState().player;
-    const titleRaw = manifestData?.source?.title || videoId;
+    if (gameSession?.getState()?.assists) {
+      gameSession.getState().assists.guideVolume = Number(vocSlider.value || 0);
+    }
 
-    const historyEntry = {
-      id: entryId,
-      player_id: activePlayer?.id ?? null,
-      player_name: activePlayer?.name || "Convidado",
-      mode: "standard",
-      session_id: null,
-      video_id: videoId,
-      song_title: String(titleRaw).slice(0, 200),
-      artist: String(manifestData?.source?.channel || "").slice(0, 200),
-      played_at: new Date().toISOString(),
-      duration_s: Math.round(songDurationSec || Number(manifestData?.source?.duration) || 0),
-      score: summary.score,
-      completed: true,
-      difficulty: currentDifficulty,
-      compatibility_level: manifestData?.compatibility?.level || "regular",
-      scoring_confidence: summary.scoring_confidence,
-      mic_quality: null,
-      assists: {
-        auto_transpose: Boolean(prefs.autoTranspose),
-        guide_volume: Number(vocSlider.value || 0),
-      },
-      details: {
-        best_streak: summary.best_streak,
-        coverage: summary.coverage,
-        segments: summary.segments,
-      },
-      scoring_version: 1,
-      app_version: "0.1.0",
-    };
+    let entryId = "";
+    try {
+      const outcome = await gameSession.finish({
+        summary,
+        durationSeconds: Math.round(songDurationSec || Number(manifestData?.source?.duration) || 0),
+        micDeviceId: audioSettings.micDeviceId,
+      });
+      entryId = outcome.entry.id;
+    } catch (err) {
+      showBanner("warning", `Não foi possível enviar o histórico agora: ${err.message}`);
+      entryId = getState().lastResultEntry?.id || `res_${Date.now()}`;
+    }
 
-    setState({ lastResultEntry: historyEntry });
-    navigate(`/result/${encodeURIComponent(entryId)}`);
+    if (!disposed) {
+      navigate(`/result/${encodeURIComponent(entryId)}`);
+    }
   }
 
-  // Controles de transporte e mixer
   micBtn?.addEventListener("click", async () => {
     if (micCapture.isActive()) {
       await micCapture.stop();
@@ -984,6 +962,9 @@ export function renderPlayView(container, params) {
     pauseVocalsSlider.value = String(val);
     pauseVocalsVal.textContent = `${Math.round(val * 100)}%`;
     audioEngine.setStemVolumes({ vocals: val });
+    if (gameSession?.getState()?.assists) {
+      gameSession.getState().assists.guideVolume = val;
+    }
   });
 
   async function initStage() {
@@ -1047,6 +1028,9 @@ export function renderPlayView(container, params) {
       if (disposed) return;
 
       songDurationSec = duration;
+      if (gameSession?.getState()?.song) {
+        gameSession.getState().song.duration = Math.round(duration);
+      }
       timelineSlider.max = String(duration);
       timelineSlider.disabled = false;
       timeTotalEl.textContent = formatClock(duration);

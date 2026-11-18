@@ -15,9 +15,40 @@ export const DEFAULT_AUDIO_SETTINGS = Object.freeze({
   defaultVocalsVol: 0.0,
 });
 
+function getStorage() {
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      return window.localStorage;
+    }
+  } catch {
+    // Ignora bloqueio de storage
+  }
+  return null;
+}
+
+function readStorageItem(key) {
+  const storage = getStorage();
+  if (!storage) return null;
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStorageItem(key, value) {
+  const storage = getStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(key, value);
+  } catch {
+    // Ignora falha de quota
+  }
+}
+
 function loadStoredAudioSettings() {
   try {
-    const raw = localStorage.getItem(AUDIO_SETTINGS_KEY);
+    const raw = readStorageItem(AUDIO_SETTINGS_KEY);
     if (!raw) return { ...DEFAULT_AUDIO_SETTINGS };
     const parsed = JSON.parse(raw);
     return {
@@ -33,9 +64,11 @@ function loadStoredAudioSettings() {
   }
 }
 
-const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+const savedTheme = readStorageItem(THEME_STORAGE_KEY);
 const initialTheme = VALID_THEMES.has(savedTheme) ? savedTheme : "dark";
-document.documentElement.dataset.theme = initialTheme;
+if (typeof document !== "undefined" && document.documentElement) {
+  document.documentElement.dataset.theme = initialTheme;
+}
 
 const state = {
   theme: initialTheme,
@@ -77,8 +110,10 @@ export function subscribe(listener) {
 
 export function setTheme(theme) {
   const next = VALID_THEMES.has(theme) ? theme : "dark";
-  localStorage.setItem(THEME_STORAGE_KEY, next);
-  document.documentElement.dataset.theme = next;
+  writeStorageItem(THEME_STORAGE_KEY, next);
+  if (typeof document !== "undefined" && document.documentElement) {
+    document.documentElement.dataset.theme = next;
+  }
   setState({ theme: next });
 }
 
@@ -97,14 +132,14 @@ export function updateAudioSettings(partial) {
   merged.defaultInstrumentalVol = Math.max(0, Math.min(1, Number(merged.defaultInstrumentalVol)));
   merged.defaultVocalsVol = Math.max(0, Math.min(1, Number(merged.defaultVocalsVol)));
 
-  localStorage.setItem(AUDIO_SETTINGS_KEY, JSON.stringify(merged));
+  writeStorageItem(AUDIO_SETTINGS_KEY, JSON.stringify(merged));
   setState({ audioSettings: merged });
   return merged;
 }
 
 export function resetAudioSettings() {
   const fresh = { ...DEFAULT_AUDIO_SETTINGS };
-  localStorage.setItem(AUDIO_SETTINGS_KEY, JSON.stringify(fresh));
+  writeStorageItem(AUDIO_SETTINGS_KEY, JSON.stringify(fresh));
   setState({ audioSettings: fresh });
   return fresh;
 }

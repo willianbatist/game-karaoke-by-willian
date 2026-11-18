@@ -1,5 +1,6 @@
 /**
- * Roteador SPA baseado em hash (#/) com suporte a cleanup ao sair da rota.
+ * Roteador SPA baseado em hash (#/) com suporte a query string (?q=) e cleanup ao sair da rota
+ * (FRONTEND_ARCHITECTURE.md §5.1).
  */
 
 import { setState } from "./store.js";
@@ -7,51 +8,78 @@ import { setState } from "./store.js";
 const renderers = new Map();
 let activeCleanup = null;
 
-function parseHash(rawHash) {
-  const cleaned = String(rawHash || "")
-    .replace(/^#/, "")
-    .replace(/\/+$/, "");
+export function parseHash(rawHash) {
+  const withoutHash = String(rawHash || "").replace(/^#/, "");
+  const qIndex = withoutHash.indexOf("?");
+  const rawPath = qIndex >= 0 ? withoutHash.slice(0, qIndex) : withoutHash;
+  const rawQuery = qIndex >= 0 ? withoutHash.slice(qIndex + 1) : "";
 
-  const path = cleaned === "" ? "/" : cleaned.startsWith("/") ? cleaned : `/${cleaned}`;
+  const cleanedPath = rawPath.replace(/\/+$/, "");
+  const path =
+    cleanedPath === "" ? "/" : cleanedPath.startsWith("/") ? cleanedPath : `/${cleanedPath}`;
   const segments = path.split("/").filter(Boolean);
 
-  if (segments.length === 0) {
-    return { name: "home", params: {}, path: "/" };
+  const queryParams = {};
+  if (rawQuery) {
+    const searchParams = new URLSearchParams(rawQuery);
+    for (const [k, v] of searchParams.entries()) {
+      queryParams[k] = v;
+    }
   }
 
-  if (segments[0] === "prepare" && segments[1]) {
+  if (segments.length === 0) {
+    return { name: "home", params: queryParams, path };
+  }
+
+  if ((segments[0] === "busca" || segments[0] === "search") && segments.length === 1) {
+    return { name: "search", params: queryParams, path };
+  }
+
+  if ((segments[0] === "preparo" || segments[0] === "prepare") && segments[1]) {
     return {
       name: "prepare",
-      params: { videoId: decodeURIComponent(segments[1]) },
+      params: { ...queryParams, videoId: decodeURIComponent(segments[1]) },
       path,
     };
   }
 
-  if (segments[0] === "play" && segments[1]) {
+  if ((segments[0] === "pre-jogo" || segments[0] === "pregame") && segments[1]) {
+    return {
+      name: "pregame",
+      params: { ...queryParams, videoId: decodeURIComponent(segments[1]) },
+      path,
+    };
+  }
+
+  if ((segments[0] === "jogo" || segments[0] === "play") && segments[1]) {
     return {
       name: "play",
-      params: { videoId: decodeURIComponent(segments[1]) },
+      params: { ...queryParams, videoId: decodeURIComponent(segments[1]) },
       path,
     };
   }
 
-  if (segments[0] === "result" && segments[1]) {
+  if ((segments[0] === "resultado" || segments[0] === "result") && segments[1]) {
     return {
       name: "result",
-      params: { sessionId: decodeURIComponent(segments[1]) },
+      params: { ...queryParams, sessionId: decodeURIComponent(segments[1]) },
       path,
     };
   }
 
-  if (segments[0] === "history" && segments.length === 1) {
-    return { name: "history", params: {}, path };
+  if ((segments[0] === "biblioteca" || segments[0] === "library") && segments.length === 1) {
+    return { name: "library", params: queryParams, path };
   }
 
-  if (segments[0] === "settings" && segments.length === 1) {
-    return { name: "settings", params: {}, path };
+  if ((segments[0] === "historico" || segments[0] === "history") && segments.length === 1) {
+    return { name: "history", params: queryParams, path };
   }
 
-  return { name: "notFound", params: { path }, path };
+  if ((segments[0] === "configuracoes" || segments[0] === "settings") && segments.length === 1) {
+    return { name: "settings", params: queryParams, path };
+  }
+
+  return { name: "notFound", params: { ...queryParams, path }, path };
 }
 
 function updateActiveNavLinks(routeName) {
