@@ -1,9 +1,9 @@
 /**
- * Rotas de catálogo local, streaming de artefatos, ajustes e exclusão (CONTRACTS.md §4/§5 e T4.1):
+ * Rotas de catálogo local, streaming de artefatos, ajustes e exclusão (CONTRACTS.md §4/§5 e T4.1/T4.2):
  * - GET /api/songs
  * - GET /api/songs/:id
  * - GET /api/songs/:id/files/:filename (com suporte a HTTP Range e guarda de path traversal)
- * - PATCH /api/songs/:id
+ * - PATCH /api/songs/:id (atualiza letra, offsets e recalcula compatibilidade)
  * - DELETE /api/songs/:id
  */
 
@@ -51,7 +51,7 @@ function getDirectorySizeBytes(dirPath) {
   }
 }
 
-export function createSongsRouter({ cacheManager, jobQueue }) {
+export function createSongsRouter({ cacheManager, jobQueue, compatibilityService = null }) {
   const router = Router();
 
   // Lista todas as músicas prontas no cache local (com suporte a filtro ?q= e ordenação ?sort=)
@@ -224,16 +224,12 @@ export function createSongsRouter({ cacheManager, jobQueue }) {
     }
   });
 
-  // Atualiza preferências da música (letra escolhida, offset_ms de letra e offset de latência por microfone)
+  // Atualiza preferências da música (letra escolhida, offset_ms de letra e offset de latência)
   router.patch("/:id", (req, res, next) => {
     try {
       const videoId = req.params.id;
       if (!validateVideoId(videoId)) {
         throw new AppError(400, "INVALID_VIDEO_ID", "Identificador de vídeo inválido.");
-      }
-
-      if (!cacheManager.isSongReady(videoId)) {
-        throw new AppError(404, "SONG_NOT_FOUND", "Música não encontrada no cache.");
       }
 
       if (jobQueue.hasActiveJob(videoId)) {
@@ -244,13 +240,26 @@ export function createSongsRouter({ cacheManager, jobQueue }) {
         );
       }
 
+      if (!cacheManager.isSongReady(videoId)) {
+        throw new AppError(404, "SONG_NOT_FOUND", "Música não encontrada no cache.");
+      }
+
       const manifest = cacheManager.readManifest(videoId);
       let lyricsData = cacheManager.readLyrics(videoId);
       const body = req.body ?? {};
 
+      // Aceita tanto o formato aninhado (CONTRACTS.md §5) quanto o plano
+      const rawOffsetMs = body.lyrics?.offset_ms !== undefined ? body.lyrics.offset_ms : body.offset_ms;
+      const rawSelectedId =
+        body.lyrics?.selected_id !== undefined ? body.lyrics.selected_id : body.selected_id;
+      const rawLatencyOffsets =
+        body.user?.latency_offsets_ms !== undefined
+          ? body.user.latency_offsets_ms
+          : body.latency_offsets_ms;
+
       // 1. Atualização de offset de sincronia da letra (offset_ms)
-      if (body.offset_ms !== undefined) {
-        const offsetMs = Number(body.offset_ms);
+      if (rawOffsetMs !== undefined) {
+        const offsetMs = Number(rawOffsetMs);
         if (!Number.isFinite(offsetMs)) {
           throw new AppError(400, "INVALID_OFFSET", "offset_ms deve ser um número válido.");
         }
@@ -264,22 +273,23 @@ export function createSongsRouter({ cacheManager, jobQueue }) {
         };
       }
 
-      // 2. Atualização da letra escolhida (selected_id) em lyrics.json e manifest.lyrics
-      if (body.selected_id !== undefined) {
+      // 2. Atualização da letra escolhida (selected_id) em lyrics.json + recálculo de compatibilidade
+      if (rawSelectedId !== undefined) {
         if (!lyricsData || !Array.isArray(lyricsData.candidates)) {
           throw new AppError(400, "NO_LYRICS_CANDIDATES", "Não há candidatos de letra salvos.");
         }
 
-        if (body.selected_id === null) {
+        if (rawSelectedId === null) {
           lyricsData.selected_id = null;
           manifest.lyrics = {
             ...(manifest.lyrics || {}),
             source: "lrclib",
             type: "none",
             selected_id: null,
+            sync_quality: 0.0,
           };
         } else {
-          const selected = lyricsData.candidates.find((c) => c.id === body.selected_id);
+          const selected = lyricsData.candidates.find((c) => c.id === rawSelectedId);
           if (!selected) {
             throw new AppError(
               400,
@@ -308,17 +318,46 @@ export function createSongsRouter({ cacheManager, jobQueue }) {
         const lyricsTmp = path.join(songDir, `lyrics.json.${process.pid}.tmp`);
         fs.writeFileSync(lyricsTmp, JSON.stringify(lyricsData, null, 2) + "\n", "utf-8");
         fs.renameSync(lyricsTmp, lyricsTarget);
+
+        // Recalcula lyrics.sync_quality e manifest.compatibility (CONTRACTS.md §5 / T4.2)
+        if (compatibilityService) {
+          let pitchMapMode = "reference";
+          try {
+            const pitchMapFile = manifest.files?.pitch_map || "pitch_map.json";
+            const pitchMapPath = path.join(songDir, pitchMapFile);
+            if (fs.existsSync(pitchMapPath)) {
+              const parsedPm = JSON.parse(fs.readFileSync(pitchMapPath, "utf-8"));
+              if (parsedPm?.mode === "heuristic") {
+                pitchMapMode = "heuristic";
+              }
+            }
+          } catch {
+            // Mantém "reference" se não conseguir ler pitch_map.json
+          }
+
+          const { compatibility, lyricsSummary } = compatibilityService.evaluatePostAnalysis(
+            manifest,
+            lyricsData,
+            { pitchMapMode }
+          );
+
+          manifest.compatibility = compatibility;
+          manifest.lyrics = {
+            ...(manifest.lyrics || {}),
+            ...lyricsSummary,
+          };
+        }
       }
 
       // 3. Atualização de offset de latência de microfone por dispositivo (latency_offsets_ms)
-      if (body.latency_offsets_ms && typeof body.latency_offsets_ms === "object") {
+      if (rawLatencyOffsets && typeof rawLatencyOffsets === "object") {
         manifest.user = {
           latency_offsets_ms: {},
           last_played: null,
           ...(manifest.user || {}),
           latency_offsets_ms: {
             ...(manifest.user?.latency_offsets_ms || {}),
-            ...body.latency_offsets_ms,
+            ...rawLatencyOffsets,
           },
         };
       }

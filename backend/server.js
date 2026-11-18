@@ -8,16 +8,21 @@ import { pathToFileURL } from "node:url";
 import express from "express";
 import configRouter from "./routes/config.js";
 import { createHealthRouter } from "./routes/health.js";
+import { createHistoryRouter } from "./routes/history.js";
 import { createJobsRouter } from "./routes/jobs.js";
+import { createPlayersRouter } from "./routes/players.js";
 import { createPrepareRouter } from "./routes/prepare.js";
 import { createSearchRouter } from "./routes/search.js";
 import { createSongsRouter } from "./routes/songs.js";
 import { createCacheManager } from "./services/cacheManager.js";
+import { createCompatibilityService } from "./services/compatibilityService.js";
+import { createHistoryService } from "./services/historyService.js";
 import { createJobQueue } from "./services/jobQueue.js";
 import { createLyricsService } from "./services/lyricsService.js";
+import { createPlayerService } from "./services/playerService.js";
 import { createProcessSupervisor } from "./services/processSupervisor.js";
 import { createYoutubeSearchService } from "./services/youtubeSearchService.js";
-import { CACHE_DIR, FRONTEND_DIR, loadDefaultConfig } from "./utils/configLoader.js";
+import { CACHE_DIR, DATA_DIR, FRONTEND_DIR, loadDefaultConfig } from "./utils/configLoader.js";
 import { errorHandler, sendError } from "./utils/errors.js";
 
 /**
@@ -50,21 +55,49 @@ export function createApp(overrides = {}) {
       config: cfg,
     });
 
+  const compatibilityService =
+    overrides.compatibilityService ??
+    createCompatibilityService({
+      cacheManager,
+    });
+
   const youtubeSearchService =
     overrides.youtubeSearchService ??
     createYoutubeSearchService({
       cacheManager,
     });
 
-  // Ao finalizar um job no Worker Python, busca a letra no LRCLIB antes de fechar manifest.json
+  const historyService =
+    overrides.historyService ??
+    createHistoryService({
+      dataDir: overrides.dataDir ?? DATA_DIR,
+    });
+
+  const playerService =
+    overrides.playerService ??
+    createPlayerService({
+      dataDir: overrides.dataDir ?? DATA_DIR,
+      historyService,
+    });
+
+  if (typeof playerService.setHistoryService === "function") {
+    playerService.setHistoryService(historyService);
+  }
+
+  // Ao finalizar um job no Worker Python:
+  // 1) Busca e salva a letra no LRCLIB
+  // 2) Calcula e grava a compatibilidade definitiva (Fase 2) antes de fechar manifest.json como ready
   jobQueue.registerOnJobDone(async (videoId) => {
     const manifest = cacheManager.readManifest(videoId);
     if (!manifest) return;
+
     await lyricsService.fetchAndSaveLyrics(videoId, {
       title: manifest.source?.title ?? "",
       channel: manifest.source?.channel ?? "",
       duration: manifest.source?.duration ?? null,
     });
+
+    compatibilityService.applyPostAnalysisToSong(videoId, { isJobActive: false });
   });
 
   const app = express();
@@ -73,9 +106,17 @@ export function createApp(overrides = {}) {
   // Rotas da API (CONTRACTS.md §5 e Fase 4)
   app.use("/api/config", configRouter);
   app.use("/api/search", createSearchRouter({ youtubeSearchService }));
-  app.use("/api/prepare", createPrepareRouter({ jobQueue }));
+  app.use(
+    "/api/prepare",
+    createPrepareRouter({ jobQueue, lyricsService, compatibilityService })
+  );
   app.use("/api/jobs", createJobsRouter({ jobQueue }));
-  app.use("/api/songs", createSongsRouter({ cacheManager, jobQueue }));
+  app.use(
+    "/api/songs",
+    createSongsRouter({ cacheManager, jobQueue, compatibilityService })
+  );
+  app.use("/api/players", createPlayersRouter({ playerService }));
+  app.use("/api/history", createHistoryRouter({ historyService }));
   app.use(
     "/api/health",
     createHealthRouter({
@@ -101,7 +142,10 @@ export function createApp(overrides = {}) {
     supervisor,
     jobQueue,
     lyricsService,
+    compatibilityService,
     youtubeSearchService,
+    playerService,
+    historyService,
   };
 
   return app;
