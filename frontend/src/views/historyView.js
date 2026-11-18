@@ -506,11 +506,17 @@ export function renderHistoryView(container) {
     }
 
     try {
-      const data = await historyClient.getRankings(videoId);
+      const [data, allSongHist] = await Promise.all([
+        historyClient.getRankings(videoId),
+        historyClient.listHistory({ videoId }).catch(() => ({ entries: [] })),
+      ]);
       if (disposed) return;
 
-      const top10 = Array.isArray(data?.top10) ? data.top10 : [];
-      const personalBests = Array.isArray(data?.personalBests) ? data.personalBests : [];
+      const personalBests = Array.isArray(data?.entries) ? data.entries : [];
+      const allCompleted = (Array.isArray(allSongHist?.entries) ? allSongHist.entries : [])
+        .filter((item) => item.completed === true)
+        .sort((a, b) => Number(b.score) - Number(a.score));
+      const top10 = (allCompleted.length > 0 ? allCompleted : personalBests).slice(0, 10);
 
       // Coluna 1: Top 10 Geral
       const topCol = document.createElement("div");
@@ -534,7 +540,7 @@ export function renderHistoryView(container) {
           left.textContent = `#${idx + 1} ${item.player_name} (${DIFFICULTY_LABELS[item.difficulty] || item.difficulty})`;
           const right = document.createElement("strong");
           right.className = "mono";
-          right.textContent = Number(item.score).toFixed(1);
+          right.textContent = Number(item.best_score ?? item.score).toFixed(1);
           li.append(left, right);
           list.appendChild(li);
         });
@@ -563,7 +569,7 @@ export function renderHistoryView(container) {
           left.textContent = `${item.player_name} • ${formatDateTimePt(item.played_at)}`;
           const right = document.createElement("strong");
           right.className = "mono";
-          right.textContent = Number(item.score).toFixed(1);
+          right.textContent = Number(item.best_score ?? item.score).toFixed(1);
           li.append(left, right);
           list.appendChild(li);
         }

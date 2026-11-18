@@ -321,7 +321,10 @@ export function renderSettingsView(container) {
       if (disposed) return;
       const savedId = getAudioSettings().micDeviceId;
 
-      micSelect.innerHTML = `<option value="">${t("settings.micDefaultOption")}</option>`;
+      const defaultOpt = document.createElement("option");
+      defaultOpt.value = "";
+      defaultOpt.textContent = t("settings.micDefaultOption");
+      micSelect.replaceChildren(defaultOpt);
       for (const dev of devices) {
         if (!dev.deviceId || dev.deviceId === "default") continue;
         const opt = document.createElement("option");
