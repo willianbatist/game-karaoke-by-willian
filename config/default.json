@@ -38,5 +38,12 @@
   "search": {
     "results": 12,
     "lyrics_timeout_ms": 1500
+  },
+  "scoring": {
+    "heuristic": {
+      "stability_window_frames": 5,
+      "stability_tolerance_semitones": 1.5,
+      "full_score_coverage": 0.6
+    }
   }
 }

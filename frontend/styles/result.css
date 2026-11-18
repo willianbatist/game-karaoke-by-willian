@@ -1,0 +1,287 @@
+/* Estilos da Tela de Resultado (T3.4) */
+
+.result-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.result-hero-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.65rem 1.85rem;
+  background: linear-gradient(
+    135deg,
+    var(--bg-surface) 0%,
+    var(--bg-surface-elevated) 100%
+  );
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.result-song-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  flex: 1 1 320px;
+}
+
+.result-kicker {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-secondary);
+}
+
+.result-song-title {
+  margin: 0;
+  font-size: clamp(1.35rem, 2.6vw, 1.85rem);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.result-song-subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.result-badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+/* Bloco da Nota Principal (0.0 a 10.0) */
+.result-score-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 175px;
+  padding: 1.15rem 1.5rem;
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-input);
+  border: 2px solid var(--accent-primary);
+  text-align: center;
+}
+
+.result-score-box[data-tier="excellent"] {
+  border-color: var(--status-success);
+}
+
+.result-score-box[data-tier="good"] {
+  border-color: var(--accent-secondary);
+}
+
+.result-score-box[data-tier="fair"] {
+  border-color: var(--status-warning);
+}
+
+.result-score-value {
+  font-family: var(--font-mono);
+  font-size: clamp(2.4rem, 4.5vw, 3.25rem);
+  font-weight: 900;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.result-score-scale {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+}
+
+.result-score-verdict {
+  margin-top: 0.5rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background-color: var(--bg-surface);
+  color: var(--accent-secondary);
+}
+
+/* Aviso de Confiança da Nota */
+.result-confidence-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.95rem 1.15rem;
+  border-radius: var(--radius-md);
+  background-color: var(--status-warning-bg);
+  border: 1px solid var(--status-warning);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.result-confidence-alert[data-level="high"] {
+  background-color: var(--status-success-bg);
+  border-color: var(--status-success);
+}
+
+.result-confidence-icon {
+  font-weight: 800;
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+/* Grade de Métricas */
+.result-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 0.9rem;
+}
+
+.result-stat-card {
+  padding: 1rem 1.15rem;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.result-stat-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.result-stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.result-stat-hint {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+/* Gráfico Temporal por Trecho */
+.result-chart-card {
+  padding: 1.25rem 1.4rem;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.result-chart-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.result-chart-header h3 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.result-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 0.3rem;
+}
+
+.legend-dot.high {
+  background-color: var(--status-success);
+}
+
+.legend-dot.mid {
+  background-color: var(--accent-secondary);
+}
+
+.legend-dot.low {
+  background-color: var(--status-warning);
+}
+
+.result-bars-viewport {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 135px;
+  padding: 0.75rem 0.65rem 0.45rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+}
+
+.result-bar-col {
+  flex: 1 1 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  min-width: 6px;
+}
+
+.result-bar-fill {
+  width: 100%;
+  min-height: 4px;
+  border-radius: 3px 3px 1px 1px;
+  background-color: var(--accent-primary);
+  transition: height 0.25s ease;
+}
+
+.result-bar-fill[data-band="high"] {
+  background-color: var(--status-success);
+}
+
+.result-bar-fill[data-band="mid"] {
+  background-color: var(--accent-secondary);
+}
+
+.result-bar-fill[data-band="low"] {
+  background-color: var(--status-warning);
+}
+
+.result-bar-fill[data-band="empty"] {
+  background-color: rgba(148, 163, 184, 0.28);
+}
+
+.result-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+/* Barra de Ações Finais */
+.result-actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 0.25rem;
+}

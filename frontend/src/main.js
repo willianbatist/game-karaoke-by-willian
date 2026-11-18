@@ -10,6 +10,7 @@ import { initBanner } from "./ui/banner.js";
 import { initConfirmModal } from "./ui/confirmModal.js";
 import { renderPlayView } from "./views/playView.js";
 import { renderPrepareView } from "./views/prepareView.js";
+import { renderResultView } from "./views/resultView.js";
 import { renderSettingsView } from "./views/settingsView.js";
 
 function extractYouTubeVideoId(rawInput) {
@@ -199,6 +200,7 @@ function registerViews() {
 
   registerRouteRenderer("prepare", renderPrepareView);
   registerRouteRenderer("play", renderPlayView);
+  registerRouteRenderer("result", renderResultView);
   registerRouteRenderer("settings", renderSettingsView);
 
   registerRouteRenderer("result", (container, params) => {

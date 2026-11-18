@@ -1,20 +1,60 @@
 /**
- * Tela de Jogo v2 (#/play/:videoId):
- * AudioEngine + LyricSync + YouTubePlayer + MicCapture + PitchRollCanvas (T2.4).
+ * Tela de Jogo Completa (#/play/:videoId) — T3.3:
+ * - AudioEngine (relógio mestre) + LyricSync + YouTubePlayer escravo mudo
+ * - Pista de Afinação (pitchLane.js) com dobramento de oitava
+ * - Motor de Pontuação (scoringEngine.js) + placar/sequência ao vivo
+ * - Medidor de microfone (micMeter.js) + detecção de vazamento e desconexão
+ * - Contagem regressiva 3-2-1, Menu de Pausa, atalhos (Espaço, Esc, F, Setas) e Wake Lock
  */
 
 import { api } from "../api.js";
 import { createAudioEngine } from "../audio/audioEngine.js";
 import { createMicCapture } from "../audio/micCapture.js";
-import { loadPitchReference } from "../audio/pitchReference.js";
 import { midiToNoteName } from "../audio/yinDetector.js";
+import { createScoringEngine } from "../game/scoringEngine.js";
 import { t } from "../i18n.js";
 import { createLyricSync } from "../player/lyricSync.js";
-import { createPitchRollCanvas } from "../player/pitchRollCanvas.js";
 import { createYouTubePlayer } from "../player/youtubePlayer.js";
 import { navigate } from "../router.js";
-import { getAudioSettings, getState, showBanner } from "../store.js";
+import { getAudioSettings, getState, setState, showBanner } from "../store.js";
+import { createMicMeter } from "../ui/components/micMeter.js";
+import { createPitchLane } from "../ui/components/pitchLane.js";
 import { confirmDialog } from "../ui/confirmModal.js";
+
+const PREFS_STORAGE_KEY = "karaoke.prefs.v1";
+
+function loadGamePrefs() {
+  try {
+    const raw = localStorage.getItem(PREFS_STORAGE_KEY);
+    if (!raw) {
+      return {
+        difficulty: "normal",
+        showVideo: true,
+        countdownSeconds: 3,
+        showPartialScore: true,
+        autoTranspose: false,
+      };
+    }
+    const parsed = JSON.parse(raw);
+    return {
+      difficulty: ["easy", "normal", "hard"].includes(parsed.difficulty)
+        ? parsed.difficulty
+        : "normal",
+      showVideo: parsed.showVideo !== false,
+      countdownSeconds: Math.max(0, Math.min(5, Number(parsed.countdownSeconds ?? 3))),
+      showPartialScore: parsed.showPartialScore !== false,
+      autoTranspose: Boolean(parsed.autoTranspose ?? false),
+    };
+  } catch {
+    return {
+      difficulty: "normal",
+      showVideo: true,
+      countdownSeconds: 3,
+      showPartialScore: true,
+      autoTranspose: false,
+    };
+  }
+}
 
 function formatClock(totalSeconds) {
   const sec = Math.max(0, Math.floor(Number(totalSeconds) || 0));
@@ -23,43 +63,79 @@ function formatClock(totalSeconds) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function rmsToMeterPercent(rms) {
-  const clamped = Math.max(0, Math.min(0.4, Number(rms) || 0));
-  return Math.min(100, Math.max(0, Math.sqrt(clamped / 0.35) * 100));
+async function fetchPitchMap(videoId) {
+  const res = await fetch(`/api/songs/${encodeURIComponent(videoId)}/files/pitch_map.json`);
+  if (!res.ok) return null;
+  return res.json();
 }
 
 export function renderPlayView(container, params) {
   const { videoId } = params;
   const audioSettings = getAudioSettings();
+  const prefs = loadGamePrefs();
+  const appConfig = getState().config || {};
+  const cfgAudio = appConfig.audio || {};
+  const cfgTolerances = appConfig.tolerances || null;
+  const cfgHeuristic = appConfig.scoring?.heuristic || null;
+  const pitchConfThreshold = Number(cfgAudio.pitch_conf_threshold ?? 0.6);
 
   let disposed = false;
+  let songFinished = false;
   let isSeekingSlider = false;
   let lastRenderedLineIndex = -999;
-  let pitchReference = null;
-  let renderRafId = null;
+
+  let manifestData = null;
+  let pitchMapData = null;
+  let scoringEngine = null;
+  let songDurationSec = 0;
+  let currentLatencyMs = Number(audioSettings.micLatencyMs) || 0;
+  let currentDifficulty = prefs.difficulty;
+  let videoEnabled = prefs.showVideo;
+
+  // Controle de contagem regressiva e pausa
+  let countdownTimerId = null;
+  let pauseMenuOpen = false;
+  let wakeLockSentinel = null;
+
+  // Heurística leve de vazamento de caixas (ARCHITECTURE.md §7.4)
+  let unvoicedBleedAccumSec = 0;
+  let bleedWarningDismissed = false;
 
   const initInstVol = audioSettings.defaultInstrumentalVol;
   const initVocVol = audioSettings.defaultVocalsVol;
 
   container.innerHTML = `
-    <div class="play-shell">
+    <div id="play-shell" class="play-shell">
       <div class="play-topbar">
-        <div style="display: flex; align-items: center; gap: 0.85rem;">
+        <div class="play-topbar-left">
           <button type="button" id="play-exit-btn" class="btn btn-secondary">
             ← ${t("play.backBtn")}
           </button>
           <div class="play-song-info">
-            <h2 id="play-title" class="play-song-title">${videoId}</h2>
-            <span id="play-channel" class="muted" style="font-size: 0.85rem;">${t("play.loadingAudio")}</span>
+            <h2 id="play-title" class="play-song-title"></h2>
+            <span id="play-channel" class="muted" style="font-size: 0.85rem;"></span>
           </div>
         </div>
 
-        <div class="play-lyrics-tools" id="play-lyrics-tools" hidden>
-          <select id="play-lyrics-select" class="select-control" aria-label="${t("play.lyricsSelectLabel")}"></select>
-          <button type="button" id="play-offset-minus" class="btn btn-secondary" title="-100ms">-100ms</button>
-          <span id="play-offset-label" class="mono" style="font-size: 0.85rem;">0 ms</span>
-          <button type="button" id="play-offset-plus" class="btn btn-secondary" title="+100ms">+100ms</button>
+        <div class="play-topbar-actions">
+          <div class="play-lyrics-tools" id="play-lyrics-tools" hidden>
+            <select id="play-lyrics-select" class="select-control" aria-label="${t("play.lyricsSelectLabel")}"></select>
+            <button type="button" id="play-offset-minus" class="btn btn-secondary" title="Atrasar letra (-100ms)">-100ms</button>
+            <span id="play-offset-label" class="mono" style="font-size: 0.85rem;">0 ms</span>
+            <button type="button" id="play-offset-plus" class="btn btn-secondary" title="Adiantar letra (+100ms)">+100ms</button>
+          </div>
+          <button type="button" id="play-fullscreen-btn" class="btn btn-secondary" title="Tela cheia (F)">
+            Tela cheia
+          </button>
+          <button type="button" id="play-pause-menu-btn" class="btn btn-secondary" title="Menu de pausa (Esc)">
+            Menu (Esc)
+          </button>
         </div>
+      </div>
+
+      <div id="stage-alert-bar" class="stage-alert-bar" role="status" aria-live="polite" hidden>
+        <span id="stage-alert-text"></span>
+        <button type="button" id="stage-alert-close" class="btn btn-secondary">OK</button>
       </div>
 
       <div class="vocal-hud-bar">
@@ -67,34 +143,90 @@ export function renderPlayView(container, params) {
           <button type="button" id="play-mic-btn" class="btn btn-secondary">
             ${t("play.micOffBtn")}
           </button>
-          <div class="stage-vu-track" title="Sinal do microfone">
-            <div id="play-vu-fill" class="stage-vu-fill"></div>
-          </div>
-          <span id="play-latency-chip" class="mono muted" style="font-size: 0.8rem;">
-            ${audioSettings.micLatencyMs} ms
-          </span>
+          <div id="mic-meter-host" class="mic-meter-host"></div>
+          <span id="play-latency-chip" class="mono muted" style="font-size: 0.8rem;"></span>
         </div>
 
         <div class="vocal-hud-right">
+          <span id="play-score-pill" class="score-hud-pill" ${prefs.showPartialScore ? "" : "hidden"}>
+            Nota <strong id="play-live-score">0.0</strong>
+          </span>
+          <span class="score-hud-pill">
+            Seq. <strong id="play-live-streak">0</strong>
+          </span>
           <span id="play-sung-note" class="stage-note-pill">--</span>
           <span id="play-hit-badge" class="hit-badge">${t("play.hitIdle")}</span>
         </div>
       </div>
 
       <section class="stage-arena">
-        <div class="stage-video-wrapper">
+        <div id="stage-video-wrapper" class="stage-video-wrapper" ${videoEnabled ? "" : "hidden"}>
           <div id="yt-player-target"></div>
         </div>
         <div id="yt-fallback-badge" class="stage-video-fallback" hidden>
           ${t("play.videoUnavailable")}
         </div>
 
-        <div class="pitch-roll-wrapper">
-          <canvas id="pitch-roll-canvas" class="pitch-roll-canvas"></canvas>
-        </div>
+        <div id="pitch-lane-wrapper" class="pitch-lane-wrapper"></div>
 
         <div id="lyrics-overlay" class="lyrics-overlay">
           <div class="lyric-current">${t("play.loadingAudio")}</div>
+        </div>
+
+        <!-- Overlay de Contagem Regressiva (3 - 2 - 1) -->
+        <div id="countdown-overlay" class="stage-modal-overlay" hidden>
+          <div class="muted" style="font-weight: 600;">Prepare-se para cantar</div>
+          <div id="countdown-number" class="countdown-number">3</div>
+          <button type="button" id="countdown-skip-btn" class="btn btn-secondary">
+            Começar agora
+          </button>
+        </div>
+
+        <!-- Overlay do Menu de Pausa (Esc) -->
+        <div id="pause-overlay" class="stage-modal-overlay" role="dialog" aria-modal="true" aria-label="Menu de pausa" hidden>
+          <div class="pause-card">
+            <h3>Partida Pausada</h3>
+
+            <div class="pause-row">
+              <span>Ajustar letra (setas ← / →)</span>
+              <div class="pause-row-controls">
+                <button type="button" id="pause-offset-minus" class="btn btn-secondary">-100ms</button>
+                <span id="pause-offset-val" class="mono">0 ms</span>
+                <button type="button" id="pause-offset-plus" class="btn btn-secondary">+100ms</button>
+              </div>
+            </div>
+
+            <div class="pause-row">
+              <span>Ajustar latência do microfone</span>
+              <div class="pause-row-controls">
+                <button type="button" id="pause-lat-minus" class="btn btn-secondary">-10ms</button>
+                <span id="pause-lat-val" class="mono">0 ms</span>
+                <button type="button" id="pause-lat-plus" class="btn btn-secondary">+10ms</button>
+              </div>
+            </div>
+
+            <div class="pause-row">
+              <span>Volume da voz guia</span>
+              <div class="pause-row-controls">
+                <input type="range" id="pause-vocals-slider" min="0" max="1" step="0.05" value="${initVocVol}" />
+                <span id="pause-vocals-val" class="mono">${Math.round(initVocVol * 100)}%</span>
+              </div>
+            </div>
+
+            <div class="pause-row">
+              <span>Vídeo de fundo</span>
+              <button type="button" id="pause-video-toggle" class="btn btn-secondary">
+                ${videoEnabled ? "Ocultar vídeo" : "Mostrar vídeo"}
+              </button>
+            </div>
+
+            <div class="pause-actions">
+              <button type="button" id="pause-resume-btn" class="btn btn-primary">Continuar</button>
+              <button type="button" id="pause-restart-btn" class="btn btn-secondary">Reiniciar</button>
+              <button type="button" id="pause-settings-btn" class="btn btn-secondary">Configurações de Áudio</button>
+              <button type="button" id="pause-exit-btn" class="btn btn-secondary">Sair</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -142,6 +274,8 @@ export function renderPlayView(container, params) {
     </div>
   `;
 
+  // Referências DOM
+  const playShellEl = container.querySelector("#play-shell");
   const exitBtn = container.querySelector("#play-exit-btn");
   const titleEl = container.querySelector("#play-title");
   const channelEl = container.querySelector("#play-channel");
@@ -150,16 +284,45 @@ export function renderPlayView(container, params) {
   const offsetMinusBtn = container.querySelector("#play-offset-minus");
   const offsetPlusBtn = container.querySelector("#play-offset-plus");
   const offsetLabelEl = container.querySelector("#play-offset-label");
+  const fullscreenBtn = container.querySelector("#play-fullscreen-btn");
+  const pauseMenuBtn = container.querySelector("#play-pause-menu-btn");
+
+  const stageAlertBar = container.querySelector("#stage-alert-bar");
+  const stageAlertText = container.querySelector("#stage-alert-text");
+  const stageAlertClose = container.querySelector("#stage-alert-close");
 
   const micBtn = container.querySelector("#play-mic-btn");
-  const vuFillEl = container.querySelector("#play-vu-fill");
+  const micMeterHost = container.querySelector("#mic-meter-host");
+  const latencyChipEl = container.querySelector("#play-latency-chip");
+  const liveScoreEl = container.querySelector("#play-live-score");
+  const liveStreakEl = container.querySelector("#play-live-streak");
   const sungNoteEl = container.querySelector("#play-sung-note");
   const hitBadgeEl = container.querySelector("#play-hit-badge");
 
+  const videoWrapperEl = container.querySelector("#stage-video-wrapper");
   const ytTargetEl = container.querySelector("#yt-player-target");
   const ytFallbackBadge = container.querySelector("#yt-fallback-badge");
-  const pitchCanvasEl = container.querySelector("#pitch-roll-canvas");
+  const pitchLaneWrapper = container.querySelector("#pitch-lane-wrapper");
   const lyricsOverlayEl = container.querySelector("#lyrics-overlay");
+
+  const countdownOverlay = container.querySelector("#countdown-overlay");
+  const countdownNumberEl = container.querySelector("#countdown-number");
+  const countdownSkipBtn = container.querySelector("#countdown-skip-btn");
+
+  const pauseOverlay = container.querySelector("#pause-overlay");
+  const pauseOffsetMinus = container.querySelector("#pause-offset-minus");
+  const pauseOffsetVal = container.querySelector("#pause-offset-val");
+  const pauseOffsetPlus = container.querySelector("#pause-offset-plus");
+  const pauseLatMinus = container.querySelector("#pause-lat-minus");
+  const pauseLatVal = container.querySelector("#pause-lat-val");
+  const pauseLatPlus = container.querySelector("#pause-lat-plus");
+  const pauseVocalsSlider = container.querySelector("#pause-vocals-slider");
+  const pauseVocalsVal = container.querySelector("#pause-vocals-val");
+  const pauseVideoToggle = container.querySelector("#pause-video-toggle");
+  const pauseResumeBtn = container.querySelector("#pause-resume-btn");
+  const pauseRestartBtn = container.querySelector("#pause-restart-btn");
+  const pauseSettingsBtn = container.querySelector("#pause-settings-btn");
+  const pauseExitBtn = container.querySelector("#pause-exit-btn");
 
   const timeCurrentEl = container.querySelector("#play-time-current");
   const timeTotalEl = container.querySelector("#play-time-total");
@@ -172,53 +335,165 @@ export function renderPlayView(container, params) {
   const vocSlider = container.querySelector("#vol-vocals");
   const vocValEl = container.querySelector("#vol-vocals-val");
 
-  const cfgAudio = getState().config?.audio || {};
+  titleEl.textContent = videoId;
+  channelEl.textContent = t("play.loadingAudio");
+  latencyChipEl.textContent = `${currentLatencyMs} ms`;
+  pauseLatVal.textContent = `${currentLatencyMs} ms`;
 
-  const lyricSync = createLyricSync();
-  const pitchRoll = createPitchRollCanvas(pitchCanvasEl, {
-    emptyMessage: t("play.noPitchData"),
+  function showStageAlert(message) {
+    if (!stageAlertBar || !stageAlertText) return;
+    stageAlertText.textContent = String(message);
+    stageAlertBar.hidden = false;
+  }
+
+  stageAlertClose?.addEventListener("click", () => {
+    stageAlertBar.hidden = true;
+    bleedWarningDismissed = true;
   });
 
+  // Wake Lock API (FRONTEND_ARCHITECTURE.md §7.4)
+  async function requestWakeLock() {
+    try {
+      if ("wakeLock" in navigator && !wakeLockSentinel) {
+        wakeLockSentinel = await navigator.wakeLock.request("screen");
+        wakeLockSentinel.addEventListener("release", () => {
+          wakeLockSentinel = null;
+        });
+      }
+    } catch {
+      // Ignora silenciosamente se o navegador/SO negar Wake Lock
+    }
+  }
+
+  async function releaseWakeLock() {
+    try {
+      if (wakeLockSentinel) {
+        await wakeLockSentinel.release();
+        wakeLockSentinel = null;
+      }
+    } catch {
+      wakeLockSentinel = null;
+    }
+  }
+
+  const micMeter = createMicMeter(micMeterHost, {
+    clarityThreshold: Number(cfgAudio.clarity_off ?? 0.7),
+  });
+
+  const lyricSync = createLyricSync();
+
   const youtubePlayer = createYouTubePlayer({
-    driftThresholdSeconds: Number(cfgAudio.youtube_drift_threshold_seconds ?? 0.45),
+    driftThresholdSeconds: Number(cfgAudio.youtube_drift_threshold_seconds ?? 0.35),
     onUnavailable: () => {
-      if (!disposed && ytFallbackBadge) {
-        ytFallbackBadge.hidden = false;
+      if (!disposed) {
+        if (videoWrapperEl) videoWrapperEl.hidden = true;
+        if (ytFallbackBadge) ytFallbackBadge.hidden = false;
       }
     },
   });
 
-  function updateHitFeedback(status) {
+  const audioEngine = createAudioEngine({
+    instrumentalVolume: initInstVol,
+    vocalsVolume: initVocVol,
+    onStateChange: (engineState) => {
+      if (disposed) return;
+      const isPlaying = engineState === "playing";
+      toggleBtn.textContent = isPlaying ? t("play.pauseBtn") : t("play.playBtn");
+
+      if (isPlaying) {
+        requestWakeLock();
+      } else {
+        releaseWakeLock();
+        youtubePlayer.syncToMaster(audioEngine.getCurrentTime(), false);
+      }
+
+      if (engineState === "ended") {
+        finishSong();
+      }
+    },
+    onTimeUpdate: (current, total) => {
+      if (disposed) return;
+      timeCurrentEl.textContent = formatClock(current);
+      if (!isSeekingSlider && total > 0) {
+        timelineSlider.value = String(current);
+      }
+      renderLyricsFrame(current);
+      if (videoEnabled) {
+        youtubePlayer.syncToMaster(current, audioEngine.getState() === "playing");
+      }
+      if (total > 0 && current >= total - 0.05 && audioEngine.getState() === "playing") {
+        finishSong();
+      }
+    },
+  });
+
+  const pitchLane = createPitchLane(pitchLaneWrapper, {
+    getCurrentTime: () => audioEngine.getCurrentTime(),
+    pitchConfThreshold,
+    latencyOffsetMs: currentLatencyMs,
+  });
+
+  function buildScoringEngine() {
+    scoringEngine = createScoringEngine({
+      pitchMap: pitchMapData,
+      difficulty: currentDifficulty,
+      tolerances: cfgTolerances,
+      pitchConfThreshold,
+      latencyOffsetMs: currentLatencyMs,
+      autoTranspose: prefs.autoTranspose,
+      heuristicConfig: cfgHeuristic,
+    });
+    liveScoreEl.textContent = "0.0";
+    liveStreakEl.textContent = "0";
+  }
+
+  function updateHitFeedback(hit) {
     if (!hitBadgeEl) return;
     hitBadgeEl.className = "hit-badge";
-    if (status === "perfect") {
+    if (hit === "perfect") {
       hitBadgeEl.classList.add("perfect");
       hitBadgeEl.textContent = t("play.hitPerfect");
-    } else if (status === "great") {
-      hitBadgeEl.classList.add("great");
-      hitBadgeEl.textContent = t("play.hitGreat");
-    } else if (status === "good") {
+    } else if (hit === "good") {
       hitBadgeEl.classList.add("good");
       hitBadgeEl.textContent = t("play.hitGood");
-    } else if (status === "miss") {
+    } else if (hit === "miss") {
       hitBadgeEl.classList.add("miss");
       hitBadgeEl.textContent = t("play.hitMiss");
-    } else if (status === "rest") {
-      hitBadgeEl.textContent = t("play.hitFree");
     } else {
       hitBadgeEl.textContent = t("play.hitIdle");
     }
   }
 
+  /**
+   * Renderiza a letra sincronizada ou plainLyrics usando apenas nós DOM e textContent
+   * (FRONTEND_ARCHITECTURE.md §4.2 e §15.4).
+   */
   function renderLyricsFrame(currentTimeSeconds) {
+    if (pitchMapData?.mode === "heuristic") {
+      if (lastRenderedLineIndex !== -30) {
+        lastRenderedLineIndex = -30;
+        lyricsOverlayEl.replaceChildren();
+        const badge = document.createElement("span");
+        badge.className = "pill";
+        badge.textContent = "Modo instrumental / karaokê";
+        const msg = document.createElement("div");
+        msg.className = "muted";
+        msg.textContent = "Letra externa desativada: acompanhe o vídeo ou cante livremente.";
+        lyricsOverlayEl.append(badge, msg);
+      }
+      return;
+    }
+
     const syncState = lyricSync.getStateAt(currentTimeSeconds);
 
     if (syncState.mode === "none") {
       if (lastRenderedLineIndex !== -10) {
         lastRenderedLineIndex = -10;
-        lyricsOverlayEl.innerHTML = `
-          <div class="muted">${t("play.instrumentalMode")}</div>
-        `;
+        lyricsOverlayEl.replaceChildren();
+        const msg = document.createElement("div");
+        msg.className = "muted";
+        msg.textContent = t("play.instrumentalMode");
+        lyricsOverlayEl.appendChild(msg);
       }
       return;
     }
@@ -226,13 +501,19 @@ export function renderPlayView(container, params) {
     if (syncState.mode === "plain") {
       if (lastRenderedLineIndex !== -20) {
         lastRenderedLineIndex = -20;
-        const htmlLines = syncState.lines
-          .map((l) => `<div>${escapeHtml(l.text)}</div>`)
-          .join("");
-        lyricsOverlayEl.innerHTML = `
-          <span class="pill">${t("play.plainLyricsBadge")}</span>
-          <div class="plain-lyrics-box">${htmlLines}</div>
-        `;
+        lyricsOverlayEl.replaceChildren();
+        const badge = document.createElement("span");
+        badge.className = "pill";
+        badge.textContent = t("play.plainLyricsBadge");
+
+        const box = document.createElement("div");
+        box.className = "plain-lyrics-box";
+        for (const line of syncState.lines) {
+          const row = document.createElement("div");
+          row.textContent = line.text;
+          box.appendChild(row);
+        }
+        lyricsOverlayEl.append(badge, box);
       }
       return;
     }
@@ -246,14 +527,28 @@ export function renderPlayView(container, params) {
         : t("play.waitingIntro");
       const nextText = syncState.nextLine ? syncState.nextLine.text : "";
 
-      lyricsOverlayEl.innerHTML = `
-        <div class="lyric-prev">${escapeHtml(prevText)}</div>
-        <div class="lyric-current">${escapeHtml(currText)}</div>
-        <div class="lyric-line-progress">
-          <div id="lyric-progress-fill" class="lyric-line-progress-fill"></div>
-        </div>
-        <div class="lyric-next">${escapeHtml(nextText)}</div>
-      `;
+      lyricsOverlayEl.replaceChildren();
+
+      const prevEl = document.createElement("div");
+      prevEl.className = "lyric-prev";
+      prevEl.textContent = prevText;
+
+      const currEl = document.createElement("div");
+      currEl.className = "lyric-current";
+      currEl.textContent = currText;
+
+      const progTrack = document.createElement("div");
+      progTrack.className = "lyric-line-progress";
+      const progFill = document.createElement("div");
+      progFill.id = "lyric-progress-fill";
+      progFill.className = "lyric-line-progress-fill";
+      progTrack.appendChild(progFill);
+
+      const nextEl = document.createElement("div");
+      nextEl.className = "lyric-next";
+      nextEl.textContent = nextText;
+
+      lyricsOverlayEl.append(prevEl, currEl, progTrack, nextEl);
     }
 
     const fillEl = lyricsOverlayEl.querySelector("#lyric-progress-fill");
@@ -262,29 +557,26 @@ export function renderPlayView(container, params) {
     }
   }
 
-  const audioEngine = createAudioEngine({
-    instrumentalVolume: initInstVol,
-    vocalsVolume: initVocVol,
-    onStateChange: (engineState) => {
-      if (disposed) return;
-      toggleBtn.textContent = engineState === "playing" ? t("play.pauseBtn") : t("play.playBtn");
+  function checkSpeakerBleed(songTime, frame) {
+    if (bleedWarningDismissed || !pitchMapData || !Array.isArray(pitchMapData.midi)) return;
+    const hop = Number(pitchMapData.hop) > 0 ? Number(pitchMapData.hop) : 0.02;
+    const idx = Math.round((songTime - Number(pitchMapData.t0 ?? 0)) / hop);
+    if (idx < 0 || idx >= pitchMapData.midi.length) return;
 
-      if (engineState === "paused" || engineState === "stopped" || engineState === "ended") {
-        youtubePlayer.syncToMaster(audioEngine.getCurrentTime(), false);
-        pitchRoll.render(audioEngine.getCurrentTime());
+    const isUnvoicedRef = pitchMapData.midi[idx] === null;
+    const highRms = Number(frame.rms) > Number(audioSettings.rmsThreshold || 0.01) * 2.2;
+    const lowClarity = !frame.voiced;
+
+    if (isUnvoicedRef && highRms && lowClarity) {
+      unvoicedBleedAccumSec += 0.025;
+      if (unvoicedBleedAccumSec >= 3.0) {
+        showStageAlert("Use fones de ouvido para uma pontuação mais justa.");
+        unvoicedBleedAccumSec = 0;
       }
-    },
-    onTimeUpdate: (current, total) => {
-      if (disposed) return;
-      timeCurrentEl.textContent = formatClock(current);
-      if (!isSeekingSlider && total > 0) {
-        timelineSlider.value = String(current);
-      }
-      renderLyricsFrame(current);
-      pitchRoll.render(current);
-      youtubePlayer.syncToMaster(current, audioEngine.getState() === "playing");
-    },
-  });
+    } else {
+      unvoicedBleedAccumSec = Math.max(0, unvoicedBleedAccumSec - 0.05);
+    }
+  }
 
   const micCapture = createMicCapture({
     inputGain: audioSettings.inputGain,
@@ -297,44 +589,49 @@ export function renderPlayView(container, params) {
       } else {
         micBtn.textContent = t("play.micOffBtn");
         micBtn.className = "btn btn-secondary";
-        vuFillEl.style.width = "0%";
         sungNoteEl.textContent = "--";
-        updateHitFeedback("silent");
+        micMeter.update({ rms: 0, clarity: 0, midi: null });
+        updateHitFeedback(null);
       }
     },
     onPitch: (frame) => {
       if (disposed) return;
-      vuFillEl.style.width = `${rmsToMeterPercent(frame.rms)}%`;
+      const hasVoice = Boolean(frame.voiced && frame.midi !== null && Number.isFinite(frame.midi));
+      micMeter.update({
+        rms: frame.rms,
+        clarity: frame.clarity,
+        midi: hasVoice ? frame.midi : null,
+      });
 
-      if (!frame.voiced || frame.midi === null) {
+      const songTime = audioEngine.getCurrentTime();
+      const isPlaying = audioEngine.getState() === "playing";
+
+      if (isPlaying) {
+        checkSpeakerBleed(songTime, frame);
+      }
+
+      if (!hasVoice) {
         sungNoteEl.textContent = "--";
-        updateHitFeedback("silent");
+        updateHitFeedback(null);
+        if (isPlaying && scoringEngine) {
+          scoringEngine.pushFrame({ songTime, midi: null });
+          pitchLane.pushUserFrame({ songTime, midi: null, hit: null });
+        }
         return;
       }
 
       sungNoteEl.textContent = midiToNoteName(frame.midi);
-      const songTime = audioEngine.getCurrentTime();
-      const isPlaying = audioEngine.getState() === "playing";
 
-      if (pitchReference) {
-        const evalRes = pitchReference.evaluateSungPitch({
-          songTimeSeconds: songTime,
-          userMidi: frame.midi,
-          micLatencyMs: audioSettings.micLatencyMs,
-          octaveTolerant: true,
-        });
+      if (isPlaying && scoringEngine) {
+        const evalRes = scoringEngine.pushFrame({ songTime, midi: frame.midi });
+        updateHitFeedback(evalRes.hit);
+        pitchLane.pushUserFrame({ songTime, midi: frame.midi, hit: evalRes.hit });
 
-        updateHitFeedback(evalRes.status);
-
-        if (isPlaying) {
-          pitchRoll.pushUserPoint({
-            time: evalRes.effectiveTime,
-            midi: evalRes.displayUserMidi ?? frame.midi,
-            status: evalRes.status,
-          });
-        }
+        const snap = scoringEngine.summary();
+        liveScoreEl.textContent = snap.score.toFixed(1);
+        liveStreakEl.textContent = String(snap.best_streak);
       } else {
-        updateHitFeedback("rest");
+        pitchLane.pushUserFrame({ songTime, midi: frame.midi, hit: null });
       }
     },
   });
@@ -345,23 +642,178 @@ export function renderPlayView(container, params) {
         deviceId: audioSettings.micDeviceId || undefined,
       });
     } catch (err) {
-      if (!silentOnFail && !disposed) {
-        showBanner("warning", `${t("play.micUnavailable")}: ${err.message}`);
+      if (!disposed) {
+        micMeter.setError("Sem microfone");
+        if (!silentOnFail) {
+          showBanner("warning", `${t("play.micUnavailable")}: ${err.message}`);
+        }
       }
     }
   }
 
-  micBtn?.addEventListener("click", async () => {
-    if (micCapture.isActive()) {
-      await micCapture.stop();
+  // Hot-plug: se o microfone desconectar durante a partida, pausa imediatamente (ARCHITECTURE.md §8.2)
+  function handleDeviceChange() {
+    if (disposed) return;
+    if (audioEngine.getState() === "playing" && micCapture.isActive()) {
+      audioEngine.pause();
+      openPauseMenu();
+      showStageAlert("Dispositivo de áudio alterado. Verifique seu microfone antes de continuar.");
+    }
+  }
+
+  navigator.mediaDevices?.addEventListener?.("devicechange", handleDeviceChange);
+
+  // Contagem regressiva 3 - 2 - 1 (FRONTEND_ARCHITECTURE.md §7.3)
+  function stopCountdown() {
+    if (countdownTimerId !== null) {
+      clearInterval(countdownTimerId);
+      countdownTimerId = null;
+    }
+    countdownOverlay.hidden = true;
+  }
+
+  function startCountdownAndPlay() {
+    stopCountdown();
+    const totalCount = Math.max(0, Number(prefs.countdownSeconds ?? 3));
+    if (totalCount === 0) {
+      audioEngine.play().catch((err) => showBanner("error", err.message));
+      return;
+    }
+
+    let remaining = totalCount;
+    countdownNumberEl.textContent = String(remaining);
+    countdownOverlay.hidden = false;
+
+    countdownTimerId = setInterval(() => {
+      if (disposed) {
+        stopCountdown();
+        return;
+      }
+      remaining -= 1;
+      if (remaining > 0) {
+        countdownNumberEl.textContent = String(remaining);
+      } else {
+        stopCountdown();
+        audioEngine.play().catch((err) => showBanner("error", err.message));
+      }
+    }, 1000);
+  }
+
+  countdownSkipBtn?.addEventListener("click", () => {
+    stopCountdown();
+    audioEngine.play().catch((err) => showBanner("error", err.message));
+  });
+
+  // Menu de Pausa (FRONTEND_ARCHITECTURE.md §7.3 e §7.4)
+  function openPauseMenu() {
+    if (pauseMenuOpen) return;
+    stopCountdown();
+    if (audioEngine.getState() === "playing") {
+      audioEngine.pause();
+    }
+    pauseMenuOpen = true;
+    pauseOffsetVal.textContent = `${lyricSync.getOffsetMs()} ms`;
+    pauseLatVal.textContent = `${currentLatencyMs} ms`;
+    pauseOverlay.hidden = false;
+  }
+
+  function closePauseMenu(resumePlay = false) {
+    if (!pauseMenuOpen) return;
+    pauseMenuOpen = false;
+    pauseOverlay.hidden = true;
+    if (resumePlay && !songFinished) {
+      audioEngine.play().catch((err) => showBanner("error", err.message));
+    }
+  }
+
+  pauseMenuBtn?.addEventListener("click", () => {
+    if (pauseMenuOpen) {
+      closePauseMenu(false);
     } else {
-      await tryEnableMic(false);
+      openPauseMenu();
     }
   });
 
-  exitBtn?.addEventListener("click", async () => {
+  pauseResumeBtn?.addEventListener("click", () => closePauseMenu(true));
+
+  function updateLyricsOffset(deltaMs) {
+    const next = lyricSync.setOffsetMs(lyricSync.getOffsetMs() + deltaMs);
+    offsetLabelEl.textContent = `${next} ms`;
+    pauseOffsetVal.textContent = `${next} ms`;
+    lastRenderedLineIndex = -999;
+    renderLyricsFrame(audioEngine.getCurrentTime());
+    api.patchSong(videoId, { lyrics: { offset_ms: next } }).catch(() => {
+      showStageAlert("Sem conexão com o servidor local: ajuste salvo apenas nesta partida.");
+    });
+  }
+
+  function updateLatencyOffset(deltaMs) {
+    currentLatencyMs = Math.max(-300, Math.min(500, currentLatencyMs + deltaMs));
+    latencyChipEl.textContent = `${currentLatencyMs} ms`;
+    pauseLatVal.textContent = `${currentLatencyMs} ms`;
+    pitchLane.setLatencyOffset(currentLatencyMs);
+    if (scoringEngine) {
+      // Reconstrói o motor com a nova latência mantendo o progresso se ainda no início
+      const snap = scoringEngine.summary();
+      if (snap.coverage === 0) {
+        buildScoringEngine();
+      }
+    }
+  }
+
+  offsetMinusBtn?.addEventListener("click", () => updateLyricsOffset(-100));
+  offsetPlusBtn?.addEventListener("click", () => updateLyricsOffset(100));
+  pauseOffsetMinus?.addEventListener("click", () => updateLyricsOffset(-100));
+  pauseOffsetPlus?.addEventListener("click", () => updateLyricsOffset(100));
+
+  pauseLatMinus?.addEventListener("click", () => updateLatencyOffset(-10));
+  pauseLatPlus?.addEventListener("click", () => updateLatencyOffset(10));
+
+  pauseVocalsSlider?.addEventListener("input", () => {
+    const val = Number(pauseVocalsSlider.value);
+    pauseVocalsVal.textContent = `${Math.round(val * 100)}%`;
+    vocSlider.value = String(val);
+    vocValEl.textContent = `${Math.round(val * 100)}%`;
+    audioEngine.setStemVolumes({ vocals: val });
+  });
+
+  pauseVideoToggle?.addEventListener("click", () => {
+    videoEnabled = !videoEnabled;
+    videoWrapperEl.hidden = !videoEnabled;
+    pauseVideoToggle.textContent = videoEnabled ? "Ocultar vídeo" : "Mostrar vídeo";
+    if (videoEnabled) {
+      youtubePlayer.syncToMaster(audioEngine.getCurrentTime(), audioEngine.getState() === "playing");
+    }
+  });
+
+  async function restartMatch() {
+    stopCountdown();
+    closePauseMenu(false);
+    songFinished = false;
+    await audioEngine.seek(0);
+    youtubePlayer.forceSeek(0);
+    buildScoringEngine();
+    pitchLane.setPitchMap(pitchMapData);
+    lastRenderedLineIndex = -999;
+    renderLyricsFrame(0);
+    startCountdownAndPlay();
+  }
+
+  pauseRestartBtn?.addEventListener("click", restartMatch);
+  restartBtn?.addEventListener("click", restartMatch);
+
+  pauseSettingsBtn?.addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "Ir para Configurações",
+      message: "Sair da partida atual para abrir as configurações de áudio?",
+      danger: false,
+    });
+    if (ok) navigate("/settings");
+  });
+
+  async function requestExitToHome() {
     const st = audioEngine.getState();
-    if (st === "playing" || st === "paused") {
+    if (st === "playing" || st === "paused" || pauseMenuOpen) {
       const ok = await confirmDialog({
         title: t("play.leaveTitle"),
         message: t("play.leaveMsg"),
@@ -370,6 +822,125 @@ export function renderPlayView(container, params) {
       if (!ok) return;
     }
     navigate("/");
+  }
+
+  exitBtn?.addEventListener("click", requestExitToHome);
+  pauseExitBtn?.addEventListener("click", requestExitToHome);
+
+  // Tela Cheia (Fullscreen API — FRONTEND_ARCHITECTURE.md §7.4)
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      playShellEl?.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }
+
+  fullscreenBtn?.addEventListener("click", toggleFullscreen);
+
+  // Atalhos de Teclado (FRONTEND_ARCHITECTURE.md §7.4)
+  function handleKeyDown(ev) {
+    if (disposed) return;
+    const tag = ev.target?.tagName;
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+
+    if (ev.code === "Space") {
+      ev.preventDefault();
+      if (pauseMenuOpen) {
+        closePauseMenu(true);
+      } else if (audioEngine.getState() === "playing") {
+        audioEngine.pause();
+      } else if (!toggleBtn.disabled) {
+        audioEngine.play().catch((err) => showBanner("error", err.message));
+      }
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      if (pauseMenuOpen) {
+        closePauseMenu(true);
+      } else {
+        openPauseMenu();
+      }
+    } else if (ev.key === "f" || ev.key === "F") {
+      ev.preventDefault();
+      toggleFullscreen();
+    } else if (pauseMenuOpen && ev.key === "ArrowLeft") {
+      ev.preventDefault();
+      updateLyricsOffset(-100);
+    } else if (pauseMenuOpen && ev.key === "ArrowRight") {
+      ev.preventDefault();
+      updateLyricsOffset(100);
+    }
+  }
+
+  window.addEventListener("keydown", handleKeyDown);
+
+  // Finalização da música e transição para Tela de Resultado (#/result/:sessionId)
+  function finishSong() {
+    if (songFinished || disposed) return;
+    songFinished = true;
+    stopCountdown();
+    releaseWakeLock();
+
+    const summary = scoringEngine
+      ? scoringEngine.summary()
+      : {
+          score: 0.0,
+          best_streak: 0,
+          coverage: 0,
+          scoring_confidence: "low",
+          segments: [],
+          transposition_semitones: 0,
+        };
+
+    const entryId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `res_${Date.now()}`;
+
+    const activePlayer = getState().player;
+    const titleRaw = manifestData?.source?.title || videoId;
+
+    const historyEntry = {
+      id: entryId,
+      player_id: activePlayer?.id ?? null,
+      player_name: activePlayer?.name || "Convidado",
+      mode: "standard",
+      session_id: null,
+      video_id: videoId,
+      song_title: String(titleRaw).slice(0, 200),
+      artist: String(manifestData?.source?.channel || "").slice(0, 200),
+      played_at: new Date().toISOString(),
+      duration_s: Math.round(songDurationSec || Number(manifestData?.source?.duration) || 0),
+      score: summary.score,
+      completed: true,
+      difficulty: currentDifficulty,
+      compatibility_level: manifestData?.compatibility?.level || "regular",
+      scoring_confidence: summary.scoring_confidence,
+      mic_quality: null,
+      assists: {
+        auto_transpose: Boolean(prefs.autoTranspose),
+        guide_volume: Number(vocSlider.value || 0),
+      },
+      details: {
+        best_streak: summary.best_streak,
+        coverage: summary.coverage,
+        segments: summary.segments,
+      },
+      scoring_version: 1,
+      app_version: "0.1.0",
+    };
+
+    setState({ lastResultEntry: historyEntry });
+    navigate(`/result/${encodeURIComponent(entryId)}`);
+  }
+
+  // Controles de transporte e mixer
+  micBtn?.addEventListener("click", async () => {
+    if (micCapture.isActive()) {
+      await micCapture.stop();
+    } else {
+      await tryEnableMic(false);
+    }
   });
 
   toggleBtn?.addEventListener("click", async () => {
@@ -377,6 +948,7 @@ export function renderPlayView(container, params) {
       if (audioEngine.getState() === "playing") {
         audioEngine.pause();
       } else {
+        closePauseMenu(false);
         await audioEngine.play();
       }
     } catch (err) {
@@ -384,21 +956,11 @@ export function renderPlayView(container, params) {
     }
   });
 
-  restartBtn?.addEventListener("click", async () => {
-    await audioEngine.seek(0);
-    youtubePlayer.forceSeek(0);
-    pitchRoll.clearTrail();
-    pitchRoll.render(0);
-    lastRenderedLineIndex = -999;
-    renderLyricsFrame(0);
-  });
-
   timelineSlider?.addEventListener("input", () => {
     isSeekingSlider = true;
     const target = Number(timelineSlider.value);
     timeCurrentEl.textContent = formatClock(target);
     renderLyricsFrame(target);
-    pitchRoll.render(target);
   });
 
   timelineSlider?.addEventListener("change", async () => {
@@ -406,8 +968,6 @@ export function renderPlayView(container, params) {
     isSeekingSlider = false;
     await audioEngine.seek(target);
     youtubePlayer.forceSeek(target);
-    pitchRoll.clearTrail();
-    pitchRoll.render(target);
     lastRenderedLineIndex = -999;
     renderLyricsFrame(target);
   });
@@ -421,74 +981,54 @@ export function renderPlayView(container, params) {
   vocSlider?.addEventListener("input", () => {
     const val = Number(vocSlider.value);
     vocValEl.textContent = `${Math.round(val * 100)}%`;
+    pauseVocalsSlider.value = String(val);
+    pauseVocalsVal.textContent = `${Math.round(val * 100)}%`;
     audioEngine.setStemVolumes({ vocals: val });
   });
 
-  async function saveLyricsPatch(patch) {
-    try {
-      await api.patchSong(videoId, patch);
-    } catch (err) {
-      showBanner("warning", err.message);
-    }
-  }
-
-  offsetMinusBtn?.addEventListener("click", () => {
-    const next = lyricSync.setOffsetMs(lyricSync.getOffsetMs() - 100);
-    offsetLabelEl.textContent = `${next} ms`;
-    lastRenderedLineIndex = -999;
-    renderLyricsFrame(audioEngine.getCurrentTime());
-    saveLyricsPatch({ offset_ms: next });
-  });
-
-  offsetPlusBtn?.addEventListener("click", () => {
-    const next = lyricSync.setOffsetMs(lyricSync.getOffsetMs() + 100);
-    offsetLabelEl.textContent = `${next} ms`;
-    lastRenderedLineIndex = -999;
-    renderLyricsFrame(audioEngine.getCurrentTime());
-    saveLyricsPatch({ offset_ms: next });
-  });
-
-  function startCanvasIdleLoop() {
-    const loop = () => {
-      if (disposed) return;
-      if (audioEngine.getState() !== "playing") {
-        pitchRoll.render(audioEngine.getCurrentTime());
-      }
-      renderRafId = requestAnimationFrame(loop);
-    };
-    renderRafId = requestAnimationFrame(loop);
-  }
-
   async function initStage() {
     try {
-      const [songData, loadedPitchRef] = await Promise.all([
+      const [songData, loadedPitchMap] = await Promise.all([
         api.getSong(videoId),
-        loadPitchReference(videoId).catch(() => null),
+        fetchPitchMap(videoId).catch(() => null),
       ]);
 
       if (disposed) return;
 
-      pitchReference = loadedPitchRef;
-      pitchRoll.setPitchReference(pitchReference, t("play.noPitchData"));
+      manifestData = songData.manifest;
+      pitchMapData = loadedPitchMap;
 
-      const { manifest, lyrics } = songData;
-      titleEl.textContent = manifest.source?.title || videoId;
-      channelEl.textContent = manifest.source?.channel || "";
+      titleEl.textContent = manifestData.source?.title || videoId;
+      channelEl.textContent = manifestData.source?.channel || "";
 
-      lyricSync.loadFromSongData(lyrics, manifest.lyrics || {});
-      offsetLabelEl.textContent = `${lyricSync.getOffsetMs()} ms`;
+      buildScoringEngine();
+      pitchLane.setPitchMap(pitchMapData);
 
-      if (lyrics && Array.isArray(lyrics.candidates) && lyrics.candidates.length > 0) {
+      const lyrics = songData.lyrics;
+      lyricSync.loadFromSongData(lyrics, manifestData.lyrics || {});
+      const initialOffset = lyricSync.getOffsetMs();
+      offsetLabelEl.textContent = `${initialOffset} ms`;
+      pauseOffsetVal.textContent = `${initialOffset} ms`;
+
+      if (
+        pitchMapData?.mode !== "heuristic" &&
+        lyrics &&
+        Array.isArray(lyrics.candidates) &&
+        lyrics.candidates.length > 0
+      ) {
         lyricsToolsEl.hidden = false;
-        lyricsSelectEl.innerHTML = lyrics.candidates
-          .map((c) => {
-            const tag = c.syncedLyrics ? "LRC" : "TXT";
-            const dur = c.duration ? ` (${formatClock(c.duration)})` : "";
-            const label = `[${tag}] ${c.artistName || ""} - ${c.trackName || ""}${dur}`;
-            const selected = c.id === lyricSync.getMetadata().activeCandidateId ? "selected" : "";
-            return `<option value="${c.id}" ${selected}>${escapeHtml(label)}</option>`;
-          })
-          .join("");
+        lyricsSelectEl.replaceChildren();
+        const activeId = lyricSync.getMetadata().activeCandidateId;
+
+        for (const c of lyrics.candidates) {
+          const opt = document.createElement("option");
+          const tag = c.syncedLyrics ? "LRC" : "TXT";
+          const dur = c.duration ? ` (${formatClock(c.duration)})` : "";
+          opt.value = String(c.id);
+          opt.textContent = `[${tag}] ${c.artistName || ""} - ${c.trackName || ""}${dur}`;
+          if (c.id === activeId) opt.selected = true;
+          lyricsSelectEl.appendChild(opt);
+        }
 
         lyricsSelectEl.addEventListener("change", () => {
           const chosenId = Number(lyricsSelectEl.value);
@@ -496,16 +1036,17 @@ export function renderPlayView(container, params) {
           lyricSync.loadCandidate(chosen);
           lastRenderedLineIndex = -999;
           renderLyricsFrame(audioEngine.getCurrentTime());
-          saveLyricsPatch({ selected_id: chosenId });
+          api.patchSong(videoId, { selected_id: chosenId }).catch(() => {});
         });
       }
 
-      const ytPromise = youtubePlayer.init(ytTargetEl, videoId);
+      const ytPromise = videoEnabled ? youtubePlayer.init(ytTargetEl, videoId) : Promise.resolve();
       const { duration } = await audioEngine.loadSong(videoId);
       await ytPromise;
 
       if (disposed) return;
 
+      songDurationSec = duration;
       timelineSlider.max = String(duration);
       timelineSlider.disabled = false;
       timeTotalEl.textContent = formatClock(duration);
@@ -514,11 +1055,10 @@ export function renderPlayView(container, params) {
 
       lastRenderedLineIndex = -999;
       renderLyricsFrame(0);
-      pitchRoll.render(0);
-      startCanvasIdleLoop();
+      pitchLane.start();
 
-      // Tenta ativar o microfone automaticamente sem bloquear o palco caso não haja permissão
       await tryEnableMic(true);
+      startCountdownAndPlay();
     } catch (err) {
       if (!disposed) {
         showBanner("error", err.message);
@@ -531,19 +1071,14 @@ export function renderPlayView(container, params) {
 
   return () => {
     disposed = true;
-    if (renderRafId !== null) {
-      cancelAnimationFrame(renderRafId);
-    }
+    stopCountdown();
+    releaseWakeLock();
+    window.removeEventListener("keydown", handleKeyDown);
+    navigator.mediaDevices?.removeEventListener?.("devicechange", handleDeviceChange);
+    pitchLane.destroy();
+    micMeter.destroy();
     micCapture.stop();
     audioEngine.destroy();
     youtubePlayer.destroy();
   };
-}
-
-function escapeHtml(text) {
-  return String(text || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
