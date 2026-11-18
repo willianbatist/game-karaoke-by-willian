@@ -10,11 +10,13 @@ import configRouter from "./routes/config.js";
 import { createHealthRouter } from "./routes/health.js";
 import { createJobsRouter } from "./routes/jobs.js";
 import { createPrepareRouter } from "./routes/prepare.js";
+import { createSearchRouter } from "./routes/search.js";
 import { createSongsRouter } from "./routes/songs.js";
 import { createCacheManager } from "./services/cacheManager.js";
 import { createJobQueue } from "./services/jobQueue.js";
 import { createLyricsService } from "./services/lyricsService.js";
 import { createProcessSupervisor } from "./services/processSupervisor.js";
+import { createYoutubeSearchService } from "./services/youtubeSearchService.js";
 import { CACHE_DIR, FRONTEND_DIR, loadDefaultConfig } from "./utils/configLoader.js";
 import { errorHandler, sendError } from "./utils/errors.js";
 
@@ -48,6 +50,12 @@ export function createApp(overrides = {}) {
       config: cfg,
     });
 
+  const youtubeSearchService =
+    overrides.youtubeSearchService ??
+    createYoutubeSearchService({
+      cacheManager,
+    });
+
   // Ao finalizar um job no Worker Python, busca a letra no LRCLIB antes de fechar manifest.json
   jobQueue.registerOnJobDone(async (videoId) => {
     const manifest = cacheManager.readManifest(videoId);
@@ -62,8 +70,9 @@ export function createApp(overrides = {}) {
   const app = express();
   app.use(express.json());
 
-  // Rotas da API (CONTRACTS.md §5)
+  // Rotas da API (CONTRACTS.md §5 e Fase 4)
   app.use("/api/config", configRouter);
+  app.use("/api/search", createSearchRouter({ youtubeSearchService }));
   app.use("/api/prepare", createPrepareRouter({ jobQueue }));
   app.use("/api/jobs", createJobsRouter({ jobQueue }));
   app.use("/api/songs", createSongsRouter({ cacheManager, jobQueue }));
@@ -92,6 +101,7 @@ export function createApp(overrides = {}) {
     supervisor,
     jobQueue,
     lyricsService,
+    youtubeSearchService,
   };
 
   return app;

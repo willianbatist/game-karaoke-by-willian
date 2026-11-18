@@ -1,9 +1,10 @@
 /**
- * Rotas de catálogo local, streaming de artefatos e ajustes por música (CONTRACTS.md §4 e §5):
+ * Rotas de catálogo local, streaming de artefatos, ajustes e exclusão (CONTRACTS.md §4/§5 e T4.1):
  * - GET /api/songs
  * - GET /api/songs/:id
  * - GET /api/songs/:id/files/:filename (com suporte a HTTP Range e guarda de path traversal)
  * - PATCH /api/songs/:id
+ * - DELETE /api/songs/:id
  */
 
 import fs from "node:fs";
@@ -26,13 +27,40 @@ function getMimeType(filename) {
   return "application/octet-stream";
 }
 
+function normalizeText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function getDirectorySizeBytes(dirPath) {
+  try {
+    let total = 0;
+    for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isFile()) {
+        total += fs.statSync(fullPath).size;
+      } else if (entry.isDirectory()) {
+        total += getDirectorySizeBytes(fullPath);
+      }
+    }
+    return total;
+  } catch {
+    return 0;
+  }
+}
+
 export function createSongsRouter({ cacheManager, jobQueue }) {
   const router = Router();
 
-  // Lista todas as músicas prontas no cache local
-  router.get("/", (_req, res, next) => {
+  // Lista todas as músicas prontas no cache local (com suporte a filtro ?q= e ordenação ?sort=)
+  router.get("/", (req, res, next) => {
     try {
+      const filterQuery = typeof req.query.q === "string" ? normalizeText(req.query.q.trim()) : "";
+      const sortMode = typeof req.query.sort === "string" ? req.query.sort : "recent";
       const songs = [];
+
       if (fs.existsSync(cacheManager.cacheRoot)) {
         for (const entry of fs.readdirSync(cacheManager.cacheRoot, { withFileTypes: true })) {
           if (!entry.isDirectory()) continue;
@@ -42,26 +70,59 @@ export function createSongsRouter({ cacheManager, jobQueue }) {
           const manifest = cacheManager.readManifest(videoId);
           if (!manifest) continue;
 
+          const title = manifest.source?.title ?? videoId;
+          const channel = manifest.source?.channel ?? "";
+
+          if (filterQuery) {
+            const haystack = `${normalizeText(title)} ${normalizeText(channel)} ${videoId.toLowerCase()}`;
+            if (!haystack.includes(filterQuery)) continue;
+          }
+
+          const songDir = cacheManager.getSongDir(videoId);
+          const sizeBytes = getDirectorySizeBytes(songDir);
+
           songs.push({
             videoId,
-            title: manifest.source?.title ?? videoId,
-            channel: manifest.source?.channel ?? "",
+            title,
+            channel,
             duration: manifest.source?.duration ?? 0,
             lyrics: manifest.lyrics ?? null,
             compatibility: manifest.compatibility ?? null,
             lastPlayed: manifest.user?.last_played ?? null,
+            createdAt: manifest.created_at ?? null,
+            sizeBytes,
           });
         }
       }
 
-      // Ordena pelas tocadas mais recentemente primeiro
-      songs.sort((a, b) => {
-        const ta = a.lastPlayed ? Date.parse(a.lastPlayed) : 0;
-        const tb = b.lastPlayed ? Date.parse(b.lastPlayed) : 0;
-        return tb - ta;
-      });
+      if (sortMode === "title") {
+        songs.sort((a, b) => a.title.localeCompare(b.title, "pt-BR", { sensitivity: "base" }));
+      } else if (sortMode === "size") {
+        songs.sort((a, b) => b.sizeBytes - a.sizeBytes);
+      } else {
+        // Padrão: tocadas mais recentemente primeiro (com fallback para data de criação)
+        songs.sort((a, b) => {
+          const ta = a.lastPlayed
+            ? Date.parse(a.lastPlayed)
+            : a.createdAt
+              ? Date.parse(a.createdAt)
+              : 0;
+          const tb = b.lastPlayed
+            ? Date.parse(b.lastPlayed)
+            : b.createdAt
+              ? Date.parse(b.createdAt)
+              : 0;
+          return tb - ta;
+        });
+      }
 
-      return res.json({ songs });
+      const totalSizeBytes = songs.reduce((acc, item) => acc + (item.sizeBytes || 0), 0);
+
+      return res.json({
+        songs,
+        totalCount: songs.length,
+        totalSizeBytes,
+      });
     } catch (err) {
       return next(err);
     }
@@ -269,6 +330,40 @@ export function createSongsRouter({ cacheManager, jobQueue }) {
       return res.json({
         manifest: savedManifest,
         lyrics: lyricsData,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  // Remove uma música do cache local (Biblioteca - T4.1)
+  router.delete("/:id", (req, res, next) => {
+    try {
+      const videoId = req.params.id;
+      if (!validateVideoId(videoId)) {
+        throw new AppError(400, "INVALID_VIDEO_ID", "Identificador de vídeo inválido.");
+      }
+
+      if (jobQueue.hasActiveJob(videoId)) {
+        throw new AppError(
+          409,
+          "JOB_ACTIVE",
+          "Não é possível excluir a música enquanto ela está sendo processada."
+        );
+      }
+
+      const manifestPath = safeResolveCachePath(cacheManager.cacheRoot, videoId, "manifest.json");
+      const songDir = path.dirname(manifestPath);
+
+      if (!fs.existsSync(songDir)) {
+        throw new AppError(404, "SONG_NOT_FOUND", "Música não encontrada no cache.");
+      }
+
+      fs.rmSync(songDir, { recursive: true, force: true });
+
+      return res.json({
+        deleted: true,
+        videoId,
       });
     } catch (err) {
       return next(err);

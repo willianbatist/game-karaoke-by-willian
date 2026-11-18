@@ -203,17 +203,6 @@ function registerViews() {
   registerRouteRenderer("result", renderResultView);
   registerRouteRenderer("settings", renderSettingsView);
 
-  registerRouteRenderer("result", (container, params) => {
-    container.innerHTML = `
-      <section class="card">
-        <h2>${t("routes.resultTitle", { sessionId: params.sessionId })}</h2>
-        <p class="muted">${t("routes.resultDesc")}</p>
-        <button type="button" class="btn btn-secondary" id="btn-back-home">${t("routes.backHome")}</button>
-      </section>
-    `;
-    container.querySelector("#btn-back-home")?.addEventListener("click", () => navigate("/"));
-  });
-
   registerRouteRenderer("history", (container) => {
     container.innerHTML = `
       <section class="card">
