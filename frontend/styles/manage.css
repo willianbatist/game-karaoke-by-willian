@@ -1,0 +1,214 @@
+/* Estilos das telas de gestão (T4.6: Biblioteca, Histórico/Rankings/Exportação e Configurações em 5 abas) */
+
+.manage-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Abas compartilhadas (Histórico e Configurações) */
+.tabs-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.65rem;
+}
+
+.tab-btn {
+  padding: 0.48rem 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.tab-btn.active {
+  background-color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #ffffff;
+}
+
+/* Biblioteca */
+.library-controls-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.library-controls-bar .text-input {
+  flex: 1 1 260px;
+}
+
+.library-list,
+.history-list,
+.players-manage-list,
+.system-diag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.library-item-card,
+.history-entry-card,
+.player-manage-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+.library-item-info,
+.history-entry-info {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+.library-item-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.library-item-title {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.library-item-meta {
+  font-size: 0.88rem;
+}
+
+.library-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Histórico e Fila Offline */
+.pending-sync-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius-md);
+  background-color: var(--status-warning-bg);
+  border: 1px solid var(--status-warning);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.pending-sync-box[hidden] {
+  display: none;
+}
+
+.history-filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.history-score-box {
+  min-width: 58px;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--accent-secondary);
+}
+
+.history-detail-dialog {
+  max-width: 520px;
+}
+
+.history-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 1rem 0;
+}
+
+.history-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.92rem;
+}
+
+/* Rankings */
+.rankings-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.ranking-box {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+.ranking-box h3 {
+  margin-top: 0;
+}
+
+.ranking-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ranking-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Exportação */
+.export-controls-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+}
+
+.manage-divider {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  margin: 1.5rem 0;
+}

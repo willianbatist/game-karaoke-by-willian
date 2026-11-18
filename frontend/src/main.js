@@ -1,5 +1,5 @@
 /**
- * Bootstrap da aplicação frontend (T4.5).
+ * Bootstrap da aplicação frontend (T4.6).
  */
 
 import { api } from "./api.js";
@@ -9,7 +9,9 @@ import { initRouter, navigate, registerRouteRenderer, renderCurrentRoute } from 
 import { getState, setState, setTheme, showBanner, subscribe } from "./store.js";
 import { initBanner } from "./ui/banner.js";
 import { initConfirmModal } from "./ui/confirmModal.js";
+import { renderHistoryView } from "./views/historyView.js";
 import { renderHomeView } from "./views/homeView.js";
+import { renderLibraryView } from "./views/libraryView.js";
 import { renderPlayView } from "./views/playView.js";
 import { renderPregameView } from "./views/pregameView.js";
 import { renderPrepareView } from "./views/prepareView.js";
@@ -80,33 +82,9 @@ function registerViews() {
   registerRouteRenderer("pregame", renderPregameView);
   registerRouteRenderer("play", renderPlayView);
   registerRouteRenderer("result", renderResultView);
+  registerRouteRenderer("library", renderLibraryView);
+  registerRouteRenderer("history", renderHistoryView);
   registerRouteRenderer("settings", renderSettingsView);
-
-  registerRouteRenderer("library", (container) => {
-    container.replaceChildren();
-    const card = document.createElement("section");
-    card.className = "card";
-    const h2 = document.createElement("h2");
-    h2.textContent = "Biblioteca";
-    const p = document.createElement("p");
-    p.className = "muted";
-    p.textContent = "A gestão completa da biblioteca será finalizada na etapa T4.6.";
-    card.append(h2, p);
-    container.appendChild(card);
-  });
-
-  registerRouteRenderer("history", (container) => {
-    container.replaceChildren();
-    const card = document.createElement("section");
-    card.className = "card";
-    const h2 = document.createElement("h2");
-    h2.textContent = t("routes.historyTitle");
-    const p = document.createElement("p");
-    p.className = "muted";
-    p.textContent = t("routes.historyDesc");
-    card.append(h2, p);
-    container.appendChild(card);
-  });
 
   registerRouteRenderer("notFound", (container) => {
     container.replaceChildren();
