@@ -40,6 +40,22 @@
     "lyrics_timeout_ms": 1500
   },
   "scoring": {
+    "weights": {
+      "easy": { "pitch": 0.30, "lyrics": 0.70 },
+      "normal": { "pitch": 0.40, "lyrics": 0.60 },
+      "hard": { "pitch": 0.60, "lyrics": 0.40 }
+    },
+    "lyric_window_padding_seconds": 0.5,
+    "auto_transpose_by_difficulty": {
+      "easy": true,
+      "normal": true,
+      "hard": false
+    },
+    "visual_snap": {
+      "easy": { "strength": 1.0, "max_semitones": 2.2 },
+      "normal": { "strength": 0.5, "max_semitones": 1.8 },
+      "hard": { "strength": 0.0, "max_semitones": 0.0 }
+    },
     "heuristic": {
       "stability_window_frames": 5,
       "stability_tolerance_semitones": 1.5,

@@ -1,7 +1,10 @@
 /**
- * Bateria de testes do Motor de Pontuação Vocal (T3.5).
- * Cobre os 5 cenários obrigatórios da Seção 14.2 de docs/ARCHITECTURE.md
- * usando gabaritos sintéticos (sem depender de música real ou do worker).
+ * Bateria de testes do Motor de Pontuação Vocal Híbrido e Experiência (T3.5 + Melhorias):
+ * Cobre os cenários originais do motor de pontuação + novos testes de:
+ * - Pesos híbridos por dificuldade (30/70 Fácil, 40/60 Normal, 60/40 Difícil)
+ * - Bloqueio de queda de nota fora das janelas da letra sincronizada (.lrc)
+ * - Extração de janelas de canto em lyricSync.js
+ * - Assistência visual magnética (pitch snap) em pitchLane.js
  *
  * Como rodar no terminal do WSL2:
  *   node --test scripts/test-scoring.js
@@ -10,6 +13,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createScoringEngine } from "../frontend/src/game/scoringEngine.js";
+import { createLyricSync } from "../frontend/src/player/lyricSync.js";
+import { applyVisualPitchSnap } from "../frontend/src/ui/components/pitchLane.js";
 
 const TOLERANCES = {
   easy: { full: 1.0, half: 2.0 },
@@ -86,6 +91,7 @@ test("2. Degradação gradual com ruído e perda parcial de frames", () => {
       tolerances: TOLERANCES,
       pitchConfThreshold: 0.6,
       latencyOffsetMs: 0,
+      autoTranspose: false,
     });
 
     for (let i = 0; i < pitchMap.midi.length; i++) {
@@ -191,7 +197,6 @@ test("5. Compensação de latência (+200 ms) restaura a nota original", () => {
   const pitchMap = createSyntheticPitchMap();
   const delaySeconds = 0.2; // 200 ms de atraso simulado
 
-  // Sem compensação de latência: os frames chegam deslocados e a nota cai
   const uncompensated = createScoringEngine({
     pitchMap,
     difficulty: "hard",
@@ -207,7 +212,6 @@ test("5. Compensação de latência (+200 ms) restaura a nota original", () => {
     });
   }
 
-  // Com latencyOffsetMs = 200: o atraso é descontado e a nota volta a 10.0
   const compensated = createScoringEngine({
     pitchMap,
     difficulty: "hard",
@@ -257,4 +261,112 @@ test("6. Modo heurístico avalia estabilidade vocal e sinaliza baixa confiança"
   const result = engine.summary();
   assert.equal(result.scoring_confidence, "low");
   assert.equal(result.score, 10.0);
+});
+
+test("7. Pesos híbridos por dificuldade aplicam 30/70 (Fácil), 40/60 (Normal) e 60/40 (Difícil)", () => {
+  const pitchMap = createSyntheticPitchMap();
+  const lyricWindows = [{ start: 0.4, end: 1.6 }];
+
+  function runOffPitchInTime(difficulty) {
+    const engine = createScoringEngine({
+      pitchMap,
+      difficulty,
+      tolerances: TOLERANCES,
+      lyricWindows,
+      pitchConfThreshold: 0.6,
+      autoTranspose: false,
+    });
+
+    for (let i = 0; i < pitchMap.midi.length; i++) {
+      const target = pitchMap.midi[i];
+      // Canta exatamente no tempo do verso, mas 4 semitons fora do tom (afinação 0, letra 10)
+      engine.pushFrame({
+        songTime: i * pitchMap.hop,
+        midi: target === null ? null : target + 4.0,
+      });
+    }
+
+    return engine.summary();
+  }
+
+  const easy = runOffPitchInTime("easy");
+  const normal = runOffPitchInTime("normal");
+  const hard = runOffPitchInTime("hard");
+
+  assert.equal(easy.pitch_score, 0.0);
+  assert.equal(easy.lyric_score, 10.0);
+  assert.equal(easy.score, 7.0);
+
+  assert.equal(normal.score, 6.0);
+  assert.equal(hard.score, 4.0);
+});
+
+test("8. Janelas da letra sincronizada (.lrc) impedem queda de nota nas pausas e vocalizações sem letra", () => {
+  const hop = 0.02;
+  const midi = [];
+  const conf = [];
+
+  // Frames 0..19 (0.00s..0.38s): vocalização sem letra ("ahn/oh" na intro)
+  // Frames 20..79 (0.40s..1.58s): verso principal com letra sincronizada
+  for (let i = 0; i < 80; i++) {
+    midi.push(64.0);
+    conf.push(0.95);
+  }
+
+  const pitchMap = { hop, t0: 0, midi, conf, mode: "reference" };
+  const lyricSync = createLyricSync();
+  lyricSync.loadCandidate({
+    id: 1,
+    syncedLyrics: "[00:00.00] ♪\n[00:00.40] Verso cantado no tempo\n[00:01.60] ♪",
+  });
+
+  const windows = lyricSync.getLyricWindows({ paddingSeconds: 0.0, songDurationSeconds: 1.6 });
+  assert.equal(windows.length, 1);
+
+  const engine = createScoringEngine({
+    pitchMap,
+    difficulty: "normal",
+    lyricWindows: windows,
+    pitchConfThreshold: 0.6,
+  });
+
+  for (let i = 0; i < 80; i++) {
+    // Jogador fica em silêncio na intro (0..19) e canta perfeitamente o verso (20..79)
+    engine.pushFrame({
+      songTime: i * hop,
+      midi: i < 20 ? null : 64.0,
+    });
+  }
+
+  const result = engine.summary();
+  assert.equal(result.score, 10.0);
+  assert.equal(result.pitch_score, 10.0);
+  assert.equal(result.lyric_score, 10.0);
+});
+
+test("9. Cursor magnético (applyVisualPitchSnap) atrai no Fácil/Normal e mantém exato no Difícil", () => {
+  const targetMidi = 65.0;
+  const sungMidi = 66.2; // 1.2 semitom acima do alvo
+
+  const easyVisual = applyVisualPitchSnap(sungMidi, targetMidi, {
+    strength: 1.0,
+    max_semitones: 2.2,
+  });
+  const normalVisual = applyVisualPitchSnap(sungMidi, targetMidi, {
+    strength: 0.5,
+    max_semitones: 1.8,
+  });
+  const hardVisual = applyVisualPitchSnap(sungMidi, targetMidi, {
+    strength: 0.0,
+    max_semitones: 0.0,
+  });
+  const farOffVisual = applyVisualPitchSnap(69.0, targetMidi, {
+    strength: 1.0,
+    max_semitones: 2.2,
+  });
+
+  assert.equal(easyVisual, 65.0);
+  assert.equal(normalVisual, 65.6);
+  assert.equal(hardVisual, 66.2);
+  assert.equal(farOffVisual, 69.0);
 });

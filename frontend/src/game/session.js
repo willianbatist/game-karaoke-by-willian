@@ -13,8 +13,8 @@ export const DEFAULT_GAME_PREFS = Object.freeze({
   difficulty: "normal",
   showVideo: true,
   countdownSeconds: 3,
-  showPartialScore: true,
-  autoTranspose: false,
+  showPartialScore: false,
+  autoTranspose: true,
   recordAbandoned: false,
   recordGuest: true,
 });
@@ -27,14 +27,19 @@ export function loadGamePrefs() {
     const raw = window.localStorage.getItem(PREFS_STORAGE_KEY);
     if (!raw) return { ...DEFAULT_GAME_PREFS };
     const parsed = JSON.parse(raw);
+    const difficulty = ["easy", "normal", "hard"].includes(parsed.difficulty)
+      ? parsed.difficulty
+      : "normal";
+
     return {
-      difficulty: ["easy", "normal", "hard"].includes(parsed.difficulty)
-        ? parsed.difficulty
-        : "normal",
+      difficulty,
       showVideo: parsed.showVideo !== false,
       countdownSeconds: Math.max(0, Math.min(5, Number(parsed.countdownSeconds ?? 3))),
-      showPartialScore: parsed.showPartialScore !== false,
-      autoTranspose: Boolean(parsed.autoTranspose ?? false),
+      showPartialScore: Boolean(parsed.showPartialScore ?? false),
+      autoTranspose:
+        parsed.autoTranspose === undefined || parsed.autoTranspose === null
+          ? difficulty !== "hard"
+          : Boolean(parsed.autoTranspose),
       recordAbandoned: Boolean(parsed.recordAbandoned ?? false),
       recordGuest: parsed.recordGuest !== false,
     };

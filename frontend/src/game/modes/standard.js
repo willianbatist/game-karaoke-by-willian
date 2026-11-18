@@ -67,6 +67,10 @@ export function buildStandardHistoryEntry(session, rawResult = {}) {
       ? player.name.trim().slice(0, 30)
       : "Convidado";
 
+  const finalScore = Number(clampNumber(scoring.score, 0, 10, 0).toFixed(1));
+  const pitchScore = Number(clampNumber(scoring.pitch_score ?? finalScore, 0, 10, finalScore).toFixed(1));
+  const lyricScore = Number(clampNumber(scoring.lyric_score ?? finalScore, 0, 10, finalScore).toFixed(1));
+
   return {
     id: rawResult.id || generateEntryId(),
     player_id: player.id ?? null,
@@ -78,7 +82,7 @@ export function buildStandardHistoryEntry(session, rawResult = {}) {
     artist: String(song.artist || song.channel || "").slice(0, 200),
     played_at: rawResult.playedAt || new Date().toISOString(),
     duration_s: Math.max(0, Math.round(Number(rawResult.durationSeconds ?? song.duration ?? 0) || 0)),
-    score: Number(clampNumber(scoring.score, 0, 10, 0).toFixed(1)),
+    score: finalScore,
     completed: rawResult.completed !== false,
     difficulty,
     compatibility_level: compatLevel,
@@ -91,9 +95,21 @@ export function buildStandardHistoryEntry(session, rawResult = {}) {
     details: {
       best_streak: Math.max(0, Math.round(Number(scoring.best_streak) || 0)),
       coverage: Number(clampNumber(scoring.coverage, 0, 1, 0).toFixed(4)),
+      pitch_score: pitchScore,
+      lyric_score: lyricScore,
+      has_synced_lyrics: Boolean(scoring.has_synced_lyrics),
+      transposition_semitones: Math.round(Number(scoring.transposition_semitones) || 0),
+      ...(scoring.weights && typeof scoring.weights === "object"
+        ? {
+            weights: {
+              pitch: Number(clampNumber(scoring.weights.pitch, 0, 1, 0.4).toFixed(2)),
+              lyrics: Number(clampNumber(scoring.weights.lyrics, 0, 1, 0.6).toFixed(2)),
+            },
+          }
+        : {}),
       ...(Array.isArray(scoring.segments) ? { segments: [...scoring.segments] } : {}),
     },
-    scoring_version: 1,
+    scoring_version: 2,
     app_version: "0.1.0",
   };
 }
@@ -221,6 +237,10 @@ export const standardMode = Object.freeze({
   summary(result = {}) {
     const entry = result.entry || result;
     const score = clampNumber(entry.score, 0, 10, 0);
+    const details = entry.details || {};
+    const pitchScore = clampNumber(details.pitch_score ?? score, 0, 10, score);
+    const lyricScore = clampNumber(details.lyric_score ?? score, 0, 10, score);
+
     let tier = "starter";
     let verdict = "Continue praticando!";
 
@@ -239,10 +259,15 @@ export const standardMode = Object.freeze({
       mode: "standard",
       score,
       scoreFormatted: score.toFixed(1),
+      pitchScore,
+      lyricScore,
+      hasSyncedLyrics: Boolean(details.has_synced_lyrics),
+      weights: details.weights || null,
+      transpositionSemitones: Math.round(Number(details.transposition_semitones) || 0),
       tier,
       verdict,
-      bestStreak: Math.max(0, Math.round(Number(entry.details?.best_streak) || 0)),
-      coverage: clampNumber(entry.details?.coverage, 0, 1, 0),
+      bestStreak: Math.max(0, Math.round(Number(details.best_streak) || 0)),
+      coverage: clampNumber(details.coverage, 0, 1, 0),
       completed: entry.completed !== false,
       persistence: result.persistence || null,
     };

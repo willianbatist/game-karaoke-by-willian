@@ -8,6 +8,7 @@
 
 const TIMESTAMP_REGEX = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
 const LRC_OFFSET_TAG_REGEX = /^\[offset:\s*([+-]?\d+)\s*\]$/i;
+const INSTRUMENTAL_ONLY_LINE_REGEX = /^[♪♫♩♬\s-]*$/;
 
 /**
  * Converte texto no formato LRC em uma lista ordenada de linhas `{ time, text }`.
@@ -170,6 +171,61 @@ export function createLyricSync(options = {}) {
   }
 
   /**
+   * Gera as janelas temporais ativas de canto a partir da letra sincronizada (.lrc).
+   * Fora dessas janelas (introduções, solos e pausas), o motor não cobra afinação.
+   */
+  function getLyricWindows({
+    paddingSeconds = 0.5,
+    maxLineDurationSeconds = 8.0,
+    songDurationSeconds = null,
+  } = {}) {
+    if (mode !== "synced" || lines.length === 0) {
+      return [];
+    }
+
+    const totalOffsetSec = (offsetMs + embeddedOffsetMs) / 1000;
+    const pad = Math.max(0, Number(paddingSeconds) || 0);
+    const maxDur = Math.max(1, Number(maxLineDurationSeconds) || 8.0);
+    const songDur =
+      Number.isFinite(Number(songDurationSeconds)) && Number(songDurationSeconds) > 0
+        ? Number(songDurationSeconds)
+        : null;
+
+    const windows = [];
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const current = lines[i];
+      // Ignora linhas marcadas apenas como pausa instrumental ("♪")
+      if (INSTRUMENTAL_ONLY_LINE_REGEX.test(current.text)) {
+        continue;
+      }
+
+      const rawStart = current.time - totalOffsetSec;
+      const next = lines[i + 1] || null;
+      const nextRawStart = next
+        ? next.time - totalOffsetSec
+        : songDur !== null
+          ? Math.min(songDur, rawStart + maxDur)
+          : rawStart + maxDur;
+
+      const rawEnd = Math.max(rawStart + 0.4, Math.min(nextRawStart, rawStart + maxDur));
+      const start = Math.max(0, rawStart - pad);
+      const end = songDur !== null ? Math.min(songDur, rawEnd + pad) : rawEnd + pad;
+
+      if (end > start) {
+        windows.push({
+          lineIndex: i,
+          text: current.text,
+          start: Number(start.toFixed(3)),
+          end: Number(end.toFixed(3)),
+        });
+      }
+    }
+
+    return windows;
+  }
+
+  /**
    * Calcula a linha ativa, a próxima linha e o progresso da linha atual para `audioTimeSeconds`.
    */
   function getStateAt(audioTimeSeconds) {
@@ -240,6 +296,7 @@ export function createLyricSync(options = {}) {
     getOffsetMs,
     getMetadata,
     getAllLines,
+    getLyricWindows,
     getStateAt,
   };
 }

@@ -1,10 +1,10 @@
 /**
- * Tela de Resultado (#/result/:sessionId) — T3.4 + T4.4:
+ * Tela de Resultado (#/result/:sessionId) — T3.4 + T4.4 + Detalhamento Híbrido:
  * - Exibe nota final (0.0 a 10.0) com classificação motivacional via standardMode.summary()
+ * - Exibe o detalhamento híbrido: Afinação (Melodia) vs. Sincronia da Letra e seus pesos
  * - Exibe status de sincronização com o histórico (salvo no servidor ou na fila local offline)
  * - Gráfico temporal de desempenho por trecho da música (`details.segments`)
  * - Estatísticas da partida: melhor sequência (streak), cobertura vocal e assistências
- * - Indicador de confiança da nota (`scoring_confidence` / `compatibility_level`)
  */
 
 import { standardMode } from "../game/modes/standard.js";
@@ -55,6 +55,12 @@ function formatDifficultyLabel(diff) {
   return "Normal";
 }
 
+function getDefaultWeightLabels(diff) {
+  if (diff === "easy") return { pitchPct: 30, lyricPct: 70 };
+  if (diff === "hard") return { pitchPct: 60, lyricPct: 40 };
+  return { pitchPct: 40, lyricPct: 60 };
+}
+
 function normalizeSegmentScore(rawSeg) {
   if (rawSeg === null || rawSeg === undefined) return null;
   let numeric = null;
@@ -86,11 +92,11 @@ function buildConfidenceBanner(entry) {
     icon.textContent = "▲";
     text.textContent =
       "Nota estimada com baixa confiança: esta faixa possui pouca referência vocal isolada ou modo instrumental ativo. Use a pontuação apenas como referência divertida.";
-  } else if (confidence === "high" && compat === "high") {
+  } else if (confidence === "high" && (compat === "excellent" || compat === "high")) {
     alert.dataset.level = "high";
     icon.textContent = "●";
     text.textContent =
-      "Alta confiança na avaliação: voz guia isolada com nitidez e sincronização estável.";
+      "Alta confiança na avaliação: voz guia isolada com nitidez e janelas de canto sincronizadas.";
   } else {
     alert.dataset.level = "medium";
     icon.textContent = "◐";
@@ -234,7 +240,6 @@ export function renderResultView(container, params) {
     persistence: getState().lastResultPersistence || null,
   });
 
-  const scoreNum = modeSummary.score;
   const { tier, verdict } = modeSummary;
   const details = entry.details || {};
   const assists = entry.assists || {};
@@ -276,9 +281,13 @@ export function renderResultView(container, params) {
   }
 
   if (assists.auto_transpose) {
+    const shift = modeSummary.transpositionSemitones;
     const transpPill = document.createElement("span");
     transpPill.className = "pill synced";
-    transpPill.textContent = "Transposição automática";
+    transpPill.textContent =
+      shift !== 0
+        ? `Tom ajustado (${shift > 0 ? `+${shift}` : shift} st)`
+        : "Ajuste de tom ativo";
     badgesRow.appendChild(transpPill);
   }
 
@@ -336,15 +345,35 @@ export function renderResultView(container, params) {
   // 2. Banner de Confiança da Nota
   shell.appendChild(buildConfidenceBanner(entry));
 
-  // 3. Grade de Métricas
+  // 3. Grade de Métricas + Detalhamento Híbrido (Afinação vs. Letra)
   const statsGrid = document.createElement("section");
   statsGrid.className = "result-stats-grid";
+
+  const defaults = getDefaultWeightLabels(entry.difficulty);
+  const pitchPct = modeSummary.weights
+    ? Math.round(Number(modeSummary.weights.pitch) * 100)
+    : defaults.pitchPct;
+  const lyricPct = modeSummary.weights
+    ? Math.round(Number(modeSummary.weights.lyrics) * 100)
+    : defaults.lyricPct;
 
   const bestStreakFrames = modeSummary.bestStreak;
   const bestStreakSec = (bestStreakFrames * 0.02).toFixed(1);
   const coveragePct = Math.round(modeSummary.coverage * 100);
 
   const statItems = [
+    {
+      label: "Afinação (Melodia)",
+      value: `${modeSummary.pitchScore.toFixed(1)} / 10`,
+      hint: `Peso na nota: ${pitchPct}% (${formatDifficultyLabel(entry.difficulty)})`,
+    },
+    {
+      label: "Sincronia da Letra",
+      value: `${modeSummary.lyricScore.toFixed(1)} / 10`,
+      hint: modeSummary.hasSyncedLyrics
+        ? `Peso na nota: ${lyricPct}% • Versos no tempo`
+        : `Peso na nota: ${lyricPct}% • Frases vocais`,
+    },
     {
       label: "Melhor sequência",
       value: `${bestStreakFrames} notas`,
@@ -354,11 +383,6 @@ export function renderResultView(container, params) {
       label: "Cobertura vocal",
       value: `${coveragePct}%`,
       hint: "Trechos cantados da faixa",
-    },
-    {
-      label: "Modo de partida",
-      value: entry.completed ? "Concluída" : "Parcial",
-      hint: `Dificuldade ${formatDifficultyLabel(entry.difficulty)}`,
     },
   ];
 

@@ -1,13 +1,15 @@
 /**
- * Componente visual da Pista de Afinação (T3.2).
+ * Componente visual da Pista de Afinação (T3.2 + Assistência Visual Magnética).
  * Renderiza o gabarito vocal (`pitch_map.json`) e o cursor da voz do usuário em <canvas>
  * sincronizado com o relógio mestre (`AudioEngine`), aplicando dobramento visual de oitava
- * e feedback acessível por forma, brilho e pulso além da cor.
- *
- * Referências:
- * - docs/FRONTEND_ARCHITECTURE.md (§7.1, §7.2, §11.1, §11.2)
- * - docs/tasks/FASE_3_PONTUACAO_RESULTADO.md (T3.2)
+ * e atração magnética configurável por dificuldade (Pitch Snap).
  */
+
+const DEFAULT_VISUAL_SNAP = Object.freeze({
+  easy: { strength: 1.0, max_semitones: 2.2 },
+  normal: { strength: 0.5, max_semitones: 1.8 },
+  hard: { strength: 0.0, max_semitones: 0.0 },
+});
 
 /**
  * Calcula a diferença circular com sinal no intervalo [-6, +6] semitons.
@@ -19,13 +21,37 @@ export function signedCircularDiff(userMidi, targetMidi) {
 
 /**
  * Projeta a nota MIDI cantada pelo usuário para a mesma oitava da nota-alvo
- * (dobramento visual de oitava — FRONTEND_ARCHITECTURE.md §7.2).
+ * (dobramento visual de oitava).
  */
 export function foldMidiToReference(userMidi, targetMidi) {
   if (!Number.isFinite(userMidi) || !Number.isFinite(targetMidi)) {
     return null;
   }
   return targetMidi + signedCircularDiff(userMidi, targetMidi);
+}
+
+/**
+ * Aplica assistência visual magnética ("pitch snap") ao cursor quando o cantor
+ * está dentro da janela de tolerância visual da dificuldade escolhida.
+ */
+export function applyVisualPitchSnap(foldedMidi, targetMidi, snapCfg = null) {
+  if (!Number.isFinite(foldedMidi) || !Number.isFinite(targetMidi) || !snapCfg) {
+    return foldedMidi;
+  }
+
+  const strength = Math.max(0, Math.min(1, Number(snapCfg.strength ?? 0)));
+  const maxSemitones = Math.max(0, Number(snapCfg.max_semitones ?? 0));
+
+  if (strength <= 0 || maxSemitones <= 0) {
+    return foldedMidi;
+  }
+
+  const diff = targetMidi - foldedMidi;
+  if (Math.abs(diff) <= maxSemitones) {
+    return foldedMidi + diff * strength;
+  }
+
+  return foldedMidi;
 }
 
 /**
@@ -42,8 +68,13 @@ export function createPitchLane(container, options = {}) {
   let pitchMap = options.pitchMap || null;
   let pitchConfThreshold = Number(options.pitchConfThreshold ?? 0.6);
   let latencyOffsetMs = Number(options.latencyOffsetMs ?? 0);
+  let difficulty = ["easy", "normal", "hard"].includes(options.difficulty)
+    ? options.difficulty
+    : "normal";
 
-  // Janela deslizante: 2s passados + 4s futuros (FASE_3 T3.2)
+  const visualSnapConfig = options.visualSnapConfig || DEFAULT_VISUAL_SNAP;
+
+  // Janela deslizante: 2s passados + 4s futuros
   const pastWindowSec = Number(options.pastWindowSec ?? 2.0);
   const futureWindowSec = Number(options.futureWindowSec ?? 4.0);
   const totalWindowSec = pastWindowSec + futureWindowSec;
@@ -118,6 +149,23 @@ export function createPitchLane(container, options = {}) {
   }
 
   /**
+   * Retorna a nota-alvo ativa no instante exato (ou +-2 frames) para o ímã visual.
+   */
+  function resolveActiveTargetMidi(effectiveTimeSec) {
+    if (!pitchMap || pitchMap.mode === "heuristic") {
+      return null;
+    }
+    const idx = timeToIndex(effectiveTimeSec);
+    const offsets = [0, -1, 1, -2, 2];
+    for (const off of offsets) {
+      if (isValidReferenceFrame(idx + off)) {
+        return pitchMap.midi[idx + off];
+      }
+    }
+    return null;
+  }
+
+  /**
    * Resolve a nota-alvo usada para dobrar a oitava do cursor:
    * 1) Nota-alvo no instante efetivo atual, se houver;
    * 2) Caso contrário, a última nota-alvo válida dentro da janela passada visível;
@@ -141,6 +189,15 @@ export function createPitchLane(container, options = {}) {
     }
 
     return null;
+  }
+
+  function computeVisualMidi(rawUserMidi, effectiveTimeSec, anchorMidi) {
+    const folded = foldMidiToReference(rawUserMidi, anchorMidi);
+    if (!Number.isFinite(folded)) return null;
+    const activeTarget = resolveActiveTargetMidi(effectiveTimeSec);
+    if (activeTarget === null) return folded;
+    const snapCfg = visualSnapConfig[difficulty] || DEFAULT_VISUAL_SNAP[difficulty];
+    return applyVisualPitchSnap(folded, activeTarget, snapCfg);
   }
 
   function midiToY(midiValue, minMidi, maxMidi) {
@@ -250,7 +307,7 @@ export function createPitchLane(container, options = {}) {
     );
     const currentIdx = timeToIndex(effectiveTimeSec);
 
-    // Agrupa frames contíguos próximos (diferença <= 0.8 semitom) em segmentos de barra
+    // Agrupa frames contíguos próximos (diferença <= 0.85 semitom) em segmentos de barra
     const segments = [];
     let segStart = -1;
     let segEnd = -1;
@@ -331,7 +388,7 @@ export function createPitchLane(container, options = {}) {
       ctx.roundRect(x1, y - barH / 2, barW, barH, radius);
       ctx.fill();
 
-      // Contorno de alto contraste quando a nota está sendo acertada (acessibilidade §11.1)
+      // Contorno de alto contraste quando a nota está sendo acertada
       if (isHitNow) {
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 1.5;
@@ -380,10 +437,12 @@ export function createPitchLane(container, options = {}) {
       visualMidi = currentUserMidi;
     } else {
       const anchorMidi = resolveAnchorReferenceMidi(effectiveTimeSec);
-      // Sem nota-alvo atual nem na janela passada visível: não desenha o cursor (FASE_3 T3.2)
+      // Sem nota-alvo atual nem na janela passada visível: não desenha o cursor
       if (anchorMidi === null) return;
-      visualMidi = foldMidiToReference(currentUserMidi, anchorMidi);
+      visualMidi = computeVisualMidi(currentUserMidi, effectiveTimeSec, anchorMidi);
     }
+
+    if (!Number.isFinite(visualMidi)) return;
 
     const cursorY = midiToY(visualMidi, minMidi, maxMidi);
     const isPerfect = currentHit === "perfect";
@@ -392,7 +451,7 @@ export function createPitchLane(container, options = {}) {
 
     ctx.save();
 
-    // Anel pulsante externo no acerto (indicação por forma/animação além de cor — §11.1)
+    // Anel pulsante externo no acerto (indicação por forma/animação além de cor)
     if (isHit) {
       const pulse = 1 + 0.25 * Math.sin(nowSec * 18);
       ctx.strokeStyle = isPerfect ? "rgba(52, 211, 153, 0.75)" : "rgba(251, 191, 36, 0.75)";
@@ -456,8 +515,14 @@ export function createPitchLane(container, options = {}) {
     pitchConfThreshold = Number(nextThreshold ?? 0.6);
   }
 
+  function setDifficulty(nextDifficulty) {
+    if (["easy", "normal", "hard"].includes(nextDifficulty)) {
+      difficulty = nextDifficulty;
+    }
+  }
+
   /**
-   * Atualiza a leitura atual da voz do usuário e registra no rastro dobrado.
+   * Atualiza a leitura atual da voz do usuário e registra no rastro dobrado/magnetizado.
    */
   function pushUserFrame({ songTime, midi, hit = null } = {}) {
     const t = Number.isFinite(songTime) ? songTime : Number(getCurrentTime()) || 0;
@@ -476,11 +541,13 @@ export function createPitchLane(container, options = {}) {
         : resolveAnchorReferenceMidi(effectiveTimeSec);
 
     if (anchorMidi !== null) {
-      const folded =
+      const visualMidi =
         pitchMap && pitchMap.mode === "heuristic"
           ? midi
-          : foldMidiToReference(midi, anchorMidi);
-      trail.push({ timeSec: t, foldedMidi: folded, hit });
+          : computeVisualMidi(midi, effectiveTimeSec, anchorMidi);
+      if (Number.isFinite(visualMidi)) {
+        trail.push({ timeSec: t, foldedMidi: visualMidi, hit });
+      }
     }
   }
 
@@ -502,6 +569,7 @@ export function createPitchLane(container, options = {}) {
     setPitchMap,
     setLatencyOffset,
     setPitchConfThreshold,
+    setDifficulty,
     pushUserFrame,
     destroy,
   };

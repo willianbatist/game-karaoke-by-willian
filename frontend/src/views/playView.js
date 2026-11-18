@@ -1,8 +1,8 @@
 /**
- * Tela de Jogo Completa (#/play/:videoId) — T3.3 + T4.4:
+ * Tela de Jogo Completa (#/play/:videoId) — T3.3 + T4.4 + Melhorias de Experiência:
  * - AudioEngine (relógio mestre) + LyricSync + YouTubePlayer escravo mudo
- * - Pista de Afinação (pitchLane.js) com dobramento de oitava
- * - Motor de Pontuação (scoringEngine.js) + Sessão de Modo (session.js) + Histórico offline
+ * - Pista de Afinação (pitchLane.js) com dobramento de oitava e cursor magnético
+ * - Motor de Pontuação Híbrido (Afinação + Sincronia de Letra)
  * - Medidor de microfone (micMeter.js) + detecção de vazamento e desconexão
  * - Contagem regressiva 3-2-1, Menu de Pausa, atalhos (Espaço, Esc, F, Setas) e Wake Lock
  */
@@ -42,7 +42,12 @@ export function renderPlayView(container, params) {
   const appConfig = getState().config || {};
   const cfgAudio = appConfig.audio || {};
   const cfgTolerances = appConfig.tolerances || null;
-  const cfgHeuristic = appConfig.scoring?.heuristic || null;
+  const cfgScoring = appConfig.scoring || {};
+  const cfgHeuristic = cfgScoring.heuristic || null;
+  const cfgScoringWeights = cfgScoring.weights || null;
+  const cfgAutoTransposeMap = cfgScoring.auto_transpose_by_difficulty || null;
+  const cfgVisualSnap = cfgScoring.visual_snap || null;
+  const lyricWindowPadding = Number(cfgScoring.lyric_window_padding_seconds ?? 0.5);
   const pitchConfThreshold = Number(cfgAudio.pitch_conf_threshold ?? 0.6);
 
   let disposed = false;
@@ -64,7 +69,7 @@ export function renderPlayView(container, params) {
   let pauseMenuOpen = false;
   let wakeLockSentinel = null;
 
-  // Heurística leve de vazamento de caixas (ARCHITECTURE.md §7.4)
+  // Heurística leve de vazamento de caixas
   let unvoicedBleedAccumSec = 0;
   let bleedWarningDismissed = false;
 
@@ -397,6 +402,8 @@ export function renderPlayView(container, params) {
     getCurrentTime: () => audioEngine.getCurrentTime(),
     pitchConfThreshold,
     latencyOffsetMs: currentLatencyMs,
+    difficulty: currentDifficulty,
+    visualSnapConfig: cfgVisualSnap,
   });
 
   function initOrResetSession() {
@@ -421,18 +428,26 @@ export function renderPlayView(container, params) {
   }
 
   function buildScoringEngine() {
+    const lyricWindows = lyricSync.getLyricWindows({
+      paddingSeconds: lyricWindowPadding,
+      songDurationSeconds: songDurationSec || Number(manifestData?.source?.duration) || null,
+    });
+
     scoringEngine = createScoringEngine({
       pitchMap: pitchMapData,
       difficulty: currentDifficulty,
       tolerances: cfgTolerances,
+      scoringWeights: cfgScoringWeights,
+      autoTransposeByDifficulty: cfgAutoTransposeMap,
+      lyricWindows,
       pitchConfThreshold,
       latencyOffsetMs: currentLatencyMs,
       autoTranspose: prefs.autoTranspose,
       heuristicConfig: cfgHeuristic,
     });
     initOrResetSession();
-    liveScoreEl.textContent = "0.0";
-    liveStreakEl.textContent = "0";
+    if (liveScoreEl) liveScoreEl.textContent = "0.0";
+    if (liveStreakEl) liveStreakEl.textContent = "0";
   }
 
   function updateHitFeedback(hit) {
@@ -609,13 +624,19 @@ export function renderPlayView(container, params) {
 
       if (isPlaying && scoringEngine) {
         const evalRes = scoringEngine.pushFrame({ songTime, midi: frame.midi });
-        gameSession?.pushFrame(evalRes);
+        const frameState = gameSession?.pushFrame(evalRes);
         updateHitFeedback(evalRes.hit);
         pitchLane.pushUserFrame({ songTime, midi: frame.midi, hit: evalRes.hit });
 
-        const snap = scoringEngine.summary();
-        liveScoreEl.textContent = snap.score.toFixed(1);
-        liveStreakEl.textContent = String(snap.best_streak);
+        if (frameState && liveStreakEl) {
+          liveStreakEl.textContent = String(frameState.bestStreak ?? 0);
+        }
+
+        // Atualiza nota parcial apenas se o usuário habilitou explicitamente nas Configurações
+        if (prefs.showPartialScore && liveScoreEl) {
+          const snap = scoringEngine.summary();
+          liveScoreEl.textContent = snap.score.toFixed(1);
+        }
       } else {
         pitchLane.pushUserFrame({ songTime, midi: frame.midi, hit: null });
       }
@@ -778,6 +799,7 @@ export function renderPlayView(container, params) {
     await audioEngine.seek(0);
     youtubePlayer.forceSeek(0);
     buildScoringEngine();
+    pitchLane.setDifficulty(currentDifficulty);
     pitchLane.setPitchMap(pitchMapData);
     lastRenderedLineIndex = -999;
     renderLyricsFrame(0);
@@ -869,7 +891,7 @@ export function renderPlayView(container, params) {
 
   window.addEventListener("keydown", handleKeyDown);
 
-  // Finalização da música via abstração de modos (T4.4) e transição para Tela de Resultado
+  // Finalização da música via abstração de modos e transição para Tela de Resultado
   async function finishSong() {
     if (songFinished || disposed) return;
     songFinished = true;
@@ -880,6 +902,8 @@ export function renderPlayView(container, params) {
       ? scoringEngine.summary()
       : {
           score: 0.0,
+          pitch_score: 0.0,
+          lyric_score: 0.0,
           best_streak: 0,
           coverage: 0,
           scoring_confidence: "low",
@@ -982,14 +1006,15 @@ export function renderPlayView(container, params) {
       titleEl.textContent = manifestData.source?.title || videoId;
       channelEl.textContent = manifestData.source?.channel || "";
 
-      buildScoringEngine();
-      pitchLane.setPitchMap(pitchMapData);
-
+      // Carrega a letra sincronizada ANTES de criar o motor de notas para gerar as janelas ativas
       const lyrics = songData.lyrics;
       lyricSync.loadFromSongData(lyrics, manifestData.lyrics || {});
       const initialOffset = lyricSync.getOffsetMs();
       offsetLabelEl.textContent = `${initialOffset} ms`;
       pauseOffsetVal.textContent = `${initialOffset} ms`;
+
+      buildScoringEngine();
+      pitchLane.setPitchMap(pitchMapData);
 
       if (
         pitchMapData?.mode !== "heuristic" &&
@@ -1015,6 +1040,7 @@ export function renderPlayView(container, params) {
           const chosenId = Number(lyricsSelectEl.value);
           const chosen = lyrics.candidates.find((c) => c.id === chosenId) || null;
           lyricSync.loadCandidate(chosen);
+          buildScoringEngine();
           lastRenderedLineIndex = -999;
           renderLyricsFrame(audioEngine.getCurrentTime());
           api.patchSong(videoId, { selected_id: chosenId }).catch(() => {});
