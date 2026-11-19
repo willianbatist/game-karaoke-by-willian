@@ -1,5 +1,5 @@
 /**
- * Bootstrap da aplicação frontend (T4.6).
+ * Bootstrap da aplicação frontend (T4.6 + Aba Preparando).
  */
 
 import { api } from "./api.js";
@@ -15,9 +15,12 @@ import { renderLibraryView } from "./views/libraryView.js";
 import { renderPlayView } from "./views/playView.js";
 import { renderPregameView } from "./views/pregameView.js";
 import { renderPrepareView } from "./views/prepareView.js";
+import { renderPreparingQueueView } from "./views/preparingQueueView.js";
 import { renderResultView } from "./views/resultView.js";
 import { renderSearchView } from "./views/searchView.js";
 import { renderSettingsView } from "./views/settingsView.js";
+
+let lastActiveJobsCount = 0;
 
 function renderStaticChrome() {
   const brandTitle = document.getElementById("brand-title");
@@ -25,10 +28,12 @@ function renderStaticChrome() {
 
   const navHome = document.getElementById("nav-home");
   const navLibrary = document.getElementById("nav-library");
+  const navPreparingLabel = document.getElementById("nav-preparing-label");
   const navHistory = document.getElementById("nav-history");
   const navSettings = document.getElementById("nav-settings");
   if (navHome) navHome.textContent = t("nav.home");
   if (navLibrary) navLibrary.textContent = "Biblioteca";
+  if (navPreparingLabel) navPreparingLabel.textContent = "Preparando";
   if (navHistory) navHistory.textContent = t("nav.history");
   if (navSettings) navSettings.textContent = t("nav.settings");
 
@@ -79,6 +84,7 @@ function registerViews() {
   registerRouteRenderer("home", renderHomeView);
   registerRouteRenderer("search", renderSearchView);
   registerRouteRenderer("prepare", renderPrepareView);
+  registerRouteRenderer("preparing", renderPreparingQueueView);
   registerRouteRenderer("pregame", renderPregameView);
   registerRouteRenderer("play", renderPlayView);
   registerRouteRenderer("result", renderResultView);
@@ -111,12 +117,38 @@ async function refreshSongsList() {
   setState({ songs, songsCount: songs.length });
 }
 
+async function refreshActiveJobsBadge() {
+  try {
+    const data = await api.getJobs("active");
+    const count = Number(data?.activeCount ?? (Array.isArray(data?.jobs) ? data.jobs.length : 0));
+    const badge = document.getElementById("nav-preparing-badge");
+    if (badge) {
+      if (count > 0) {
+        badge.textContent = String(count);
+        badge.hidden = false;
+      } else {
+        badge.textContent = "0";
+        badge.hidden = true;
+      }
+    }
+
+    // Se algum preparo terminou em segundo plano, atualiza a lista de músicas prontas
+    if (lastActiveJobsCount > 0 && count < lastActiveJobsCount) {
+      refreshSongsList().catch(() => {});
+    }
+    lastActiveJobsCount = count;
+  } catch {
+    // Silencioso quando offline
+  }
+}
+
 async function loadInitialBackendData() {
   try {
     const [config] = await Promise.all([
       api.getConfig(),
       refreshSongsList(),
       playerStore.loadPlayers().catch(() => []),
+      refreshActiveJobsBadge(),
     ]);
     setState({ config });
   } catch (err) {
@@ -168,7 +200,12 @@ async function bootstrap() {
     if (getState().route.name === "home") {
       refreshSongsList().catch(() => {});
     }
+    refreshActiveJobsBadge();
   });
+
+  setInterval(() => {
+    refreshActiveJobsBadge();
+  }, 4000);
 
   renderStaticChrome();
   registerViews();

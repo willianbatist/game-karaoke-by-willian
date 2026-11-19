@@ -94,6 +94,11 @@ export const api = {
     });
   },
 
+  getJobs(status = "") {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    return requestJson(`/api/jobs${query}`);
+  },
+
   getJob(jobId) {
     return requestJson(`/api/jobs/${encodeURIComponent(jobId)}`);
   },

@@ -163,6 +163,43 @@ export function createJobQueue({
     return payload;
   }
 
+  function listJobs() {
+    const items = [];
+    for (const job of jobs.values()) {
+      const stateObj = getJobPublicState(job.id);
+      let title = null;
+      let channel = null;
+      try {
+        const manifest = cacheManager.readManifest(job.videoId);
+        title = manifest?.source?.title ?? null;
+        channel = manifest?.source?.channel ?? null;
+      } catch {
+        // Ignora caso o manifest ainda não tenha sido gravado
+      }
+
+      items.push({
+        ...stateObj,
+        status: stateObj.state,
+        title,
+        channel,
+        createdAt: job.createdAt ?? null,
+      });
+    }
+
+    const rank = { running: 0, queued: 1, ready: 2, failed: 3, canceled: 4 };
+    items.sort((a, b) => {
+      const rA = rank[a.state] ?? 9;
+      const rB = rank[b.state] ?? 9;
+      if (rA !== rB) return rA - rB;
+      if (a.state === "queued" && b.state === "queued") {
+        return (a.position ?? 999) - (b.position ?? 999);
+      }
+      return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+    });
+
+    return items.slice(0, 30);
+  }
+
   function enqueue(videoId) {
     if (!validateVideoId(videoId)) {
       throw new AppError(400, "INVALID_VIDEO_ID", "Identificador de vídeo inválido.");
@@ -191,6 +228,7 @@ export function createJobQueue({
       percent: 0,
       device: null,
       error: null,
+      createdAt: new Date().toISOString(),
       history: [],
       sseClients: new Set(),
       cancelHandle: null,
@@ -527,6 +565,7 @@ export function createJobQueue({
     enqueue,
     cancelJob,
     getJobPublicState,
+    listJobs,
     subscribeSse,
     registerOnJobDone,
     runPostProcess,

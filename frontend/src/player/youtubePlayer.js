@@ -3,10 +3,26 @@
  * - O áudio NUNCA vem do YouTube (`mute()` forçado).
  * - O relógio mestre é o `AudioEngine`; o vídeo apenas acompanha play/pause e corrige
  *   derivas maiores que `driftThresholdSeconds` respeitando um intervalo mínimo entre seeks.
+ * - Descarrega ativamente os módulos de legenda (`captions` e `cc`) para evitar sobreposição
+ *   sobre a letra sincronizada do karaokê.
  * - Degrada graciosamente se o vídeo não permitir embed (erros 100/101/150) ou estiver offline.
  */
 
 let apiLoadPromise = null;
+
+function disableCaptions(target) {
+  if (!target || typeof target.unloadModule !== "function") return;
+  try {
+    target.unloadModule("captions");
+  } catch {
+    // Ignora caso o módulo de legendas não esteja carregado
+  }
+  try {
+    target.unloadModule("cc");
+  } catch {
+    // Ignora caso o módulo cc não esteja carregado
+  }
+}
 
 function loadYouTubeIframeApi(timeoutMs = 8000) {
   if (typeof window === "undefined") {
@@ -113,6 +129,7 @@ export function createYouTubePlayer(options = {}) {
           height: "100%",
           playerVars: {
             autoplay: 0,
+            cc_load_policy: 0,
             controls: 0,
             disablekb: 1,
             fs: 0,
@@ -132,18 +149,25 @@ export function createYouTubePlayer(options = {}) {
               } catch {
                 // Ignora se mock não implementar setVolume
               }
+              disableCaptions(target);
               ready = true;
               resolve({ ok: true });
             },
+            onApiChange: (evt) => {
+              // Disparado quando módulos internos (como legendas automáticas) são carregados
+              disableCaptions(evt?.target || player);
+            },
             onStateChange: (evt) => {
-              // Garante que o player permaneça sempre mudo mesmo após mudança de estado
+              const target = evt?.target || player;
+              // Garante que o player permaneça sempre mudo e sem legendas após mudança de estado
               try {
-                if (player && typeof player.isMuted === "function" && !player.isMuted()) {
-                  player.mute();
+                if (target && typeof target.isMuted === "function" && !target.isMuted()) {
+                  target.mute();
                 }
               } catch {
                 // Ignora
               }
+              disableCaptions(target);
               if (onStateChange) {
                 onStateChange(evt?.data);
               }
@@ -178,6 +202,7 @@ export function createYouTubePlayer(options = {}) {
       if (isPlaying) {
         if (ytState !== 1 && ytState !== 3) {
           player.playVideo?.();
+          disableCaptions(player);
         }
       } else if (ytState === 1) {
         player.pauseVideo?.();

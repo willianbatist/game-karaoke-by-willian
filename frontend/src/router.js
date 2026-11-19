@@ -71,6 +71,10 @@ export function parseHash(rawHash) {
     return { name: "library", params: queryParams, path };
   }
 
+  if ((segments[0] === "preparando" || segments[0] === "preparing") && segments.length === 1) {
+    return { name: "preparing", params: queryParams, path };
+  }
+
   if ((segments[0] === "historico" || segments[0] === "history") && segments.length === 1) {
     return { name: "history", params: queryParams, path };
   }
@@ -83,10 +87,11 @@ export function parseHash(rawHash) {
 }
 
 function updateActiveNavLinks(routeName) {
+  const effectiveRoute = routeName === "prepare" ? "preparing" : routeName;
   const links = document.querySelectorAll("[data-nav-route]");
   for (const link of links) {
     const target = link.getAttribute("data-nav-route");
-    link.classList.toggle("active", target === routeName);
+    link.classList.toggle("active", target === effectiveRoute);
   }
 }
 

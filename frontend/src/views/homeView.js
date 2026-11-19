@@ -4,12 +4,14 @@
  * - Seletor/criação rápida de jogador (ou Convidado) via playerStore
  * - Busca por nome da música/artista ou link/ID do YouTube
  * - Atalhos para Biblioteca, Histórico e Configurações + aviso de primeira execução
+ * - Cards de músicas prontas com estrela de favorito global (★) e ordenação prioritária
  */
 
 import { championshipMode } from "../game/modes/championship.js";
 import { playerStore } from "../players/playerStore.js";
 import { navigate } from "../router.js";
 import { getState, showBanner, subscribe } from "../store.js";
+import { createFavoriteButton } from "../ui/components/favoriteButton.js";
 
 const FIRST_RUN_KEY = "karaoke.firstRunDone.v1";
 
@@ -310,7 +312,7 @@ export function renderHomeView(container) {
   searchCard.append(searchTitle, searchSubtitle, searchForm, shortcutsRow);
   shell.appendChild(searchCard);
 
-  // 5. Prévia rápida das músicas prontas no cache local
+  // 5. Prévia rápida das músicas prontas no cache local (favoritas primeiro)
   const cachedSection = document.createElement("section");
   cachedSection.className = "card";
 
@@ -327,7 +329,9 @@ export function renderHomeView(container) {
   const cachedGridHost = document.createElement("div");
 
   function renderCachedSongs() {
-    const songs = Array.isArray(getState().songs) ? getState().songs : [];
+    const rawSongs = Array.isArray(getState().songs) ? getState().songs : [];
+    const songs = [...rawSongs].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
+
     cachedHeading.textContent = `Prontas para cantar agora (${songs.length})`;
     cachedGridHost.replaceChildren();
 
@@ -345,12 +349,23 @@ export function renderHomeView(container) {
 
     for (const song of songs.slice(0, 6)) {
       const card = document.createElement("article");
-      card.className = "song-card";
+      card.className = song.favorite ? "song-card song-card--favorite" : "song-card";
 
       const info = document.createElement("div");
+      const titleRow = document.createElement("div");
+      titleRow.className = "song-card-header";
+
       const title = document.createElement("h3");
       title.className = "song-card-title";
       title.textContent = song.title || song.videoId;
+
+      const favBtn = createFavoriteButton(song, {
+        onToggle: (nextFav) => {
+          card.classList.toggle("song-card--favorite", nextFav);
+        },
+      });
+
+      titleRow.append(title, favBtn);
 
       const meta = document.createElement("div");
       meta.className = "song-card-meta";
@@ -372,7 +387,7 @@ export function renderHomeView(container) {
             : "Sem letra";
 
       meta.append(chSpan, durSpan, lyrPill);
-      info.append(title, meta);
+      info.append(titleRow, meta);
 
       const actions = document.createElement("div");
       actions.className = "song-card-actions";

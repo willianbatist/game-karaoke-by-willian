@@ -1,9 +1,9 @@
 /**
  * Rotas de catálogo local, streaming de artefatos, ajustes e exclusão (CONTRACTS.md §4/§5 e T4.1/T4.2):
- * - GET /api/songs
+ * - GET /api/songs (suporta ?q=, ?favorite=1 e ?sort=)
  * - GET /api/songs/:id
  * - GET /api/songs/:id/files/:filename (com suporte a HTTP Range e guarda de path traversal)
- * - PATCH /api/songs/:id (atualiza letra, offsets e recalcula compatibilidade)
+ * - PATCH /api/songs/:id (atualiza letra, offsets, favorito global e recalcula compatibilidade)
  * - DELETE /api/songs/:id
  */
 
@@ -54,10 +54,11 @@ function getDirectorySizeBytes(dirPath) {
 export function createSongsRouter({ cacheManager, jobQueue, compatibilityService = null }) {
   const router = Router();
 
-  // Lista todas as músicas prontas no cache local (com suporte a filtro ?q= e ordenação ?sort=)
+  // Lista todas as músicas prontas no cache local (com suporte a ?q=, ?favorite=1 e ?sort=)
   router.get("/", (req, res, next) => {
     try {
       const filterQuery = typeof req.query.q === "string" ? normalizeText(req.query.q.trim()) : "";
+      const onlyFavorites = req.query.favorite === "1" || req.query.favorite === "true";
       const sortMode = typeof req.query.sort === "string" ? req.query.sort : "recent";
       const songs = [];
 
@@ -69,6 +70,9 @@ export function createSongsRouter({ cacheManager, jobQueue, compatibilityService
 
           const manifest = cacheManager.readManifest(videoId);
           if (!manifest) continue;
+
+          const isFavorite = Boolean(manifest.favorite);
+          if (onlyFavorites && !isFavorite) continue;
 
           const title = manifest.source?.title ?? videoId;
           const channel = manifest.source?.channel ?? "";
@@ -86,6 +90,7 @@ export function createSongsRouter({ cacheManager, jobQueue, compatibilityService
             title,
             channel,
             duration: manifest.source?.duration ?? 0,
+            favorite: isFavorite,
             lyrics: manifest.lyrics ?? null,
             compatibility: manifest.compatibility ?? null,
             lastPlayed: manifest.user?.last_played ?? null,
@@ -100,8 +105,11 @@ export function createSongsRouter({ cacheManager, jobQueue, compatibilityService
       } else if (sortMode === "size") {
         songs.sort((a, b) => b.sizeBytes - a.sizeBytes);
       } else {
-        // Padrão: tocadas mais recentemente primeiro (com fallback para data de criação)
+        // Padrão: favoritas no topo, seguidas pelas tocadas/criadas mais recentemente
         songs.sort((a, b) => {
+          const favDiff = (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0);
+          if (favDiff !== 0) return favDiff;
+
           const ta = a.lastPlayed
             ? Date.parse(a.lastPlayed)
             : a.createdAt
@@ -224,7 +232,7 @@ export function createSongsRouter({ cacheManager, jobQueue, compatibilityService
     }
   });
 
-  // Atualiza preferências da música (letra escolhida, offset_ms de letra e offset de latência)
+  // Atualiza preferências da música (letra escolhida, offset_ms, favorito global e offset de latência)
   router.patch("/:id", (req, res, next) => {
     try {
       const videoId = req.params.id;
@@ -256,6 +264,19 @@ export function createSongsRouter({ cacheManager, jobQueue, compatibilityService
         body.user?.latency_offsets_ms !== undefined
           ? body.user.latency_offsets_ms
           : body.latency_offsets_ms;
+      const rawFavorite = body.favorite;
+
+      // 0. Atualização da marcação global de favorito (estrela)
+      if (rawFavorite !== undefined) {
+        if (typeof rawFavorite !== "boolean") {
+          throw new AppError(
+            400,
+            "INVALID_FAVORITE",
+            "favorite deve ser um valor booleano (true ou false)."
+          );
+        }
+        manifest.favorite = rawFavorite;
+      }
 
       // 1. Atualização de offset de sincronia da letra (offset_ms)
       if (rawOffsetMs !== undefined) {

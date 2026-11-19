@@ -1,14 +1,15 @@
 /**
  * Tela de Biblioteca Local (#/biblioteca) — FRONTEND_ARCHITECTURE.md §5.3 e T4.6.1:
  * - Lista músicas preparadas no cache (GET /api/songs?q=&sort=)
- * - Exibe espaço total ocupado em disco, busca e ordenação (recente, título, tamanho)
- * - Ações por música: Cantar (#/pre-jogo/:videoId), Reprocessar e Excluir do cache
+ * - Exibe espaço total ocupado em disco, busca, filtro rápido "Favoritas ★" e ordenação
+ * - Ações por música: Favoritar (★), Cantar (#/pre-jogo/:videoId), Reprocessar e Excluir do cache
  */
 
 import { api } from "../api.js";
 import { navigate } from "../router.js";
 import { setState, showBanner } from "../store.js";
 import { createCompatibilityBadge } from "../ui/components/compatibilityBadge.js";
+import { createFavoriteButton } from "../ui/components/favoriteButton.js";
 import { confirmDialog } from "../ui/confirmModal.js";
 
 function formatDuration(sec) {
@@ -43,6 +44,8 @@ export function renderLibraryView(container) {
   let disposed = false;
   let currentQuery = "";
   let currentSort = "recent";
+  let onlyFavorites = false;
+  let lastLoadedData = { songs: [], totalCount: 0, totalSizeBytes: 0 };
   let debounceTimer = null;
 
   container.replaceChildren();
@@ -82,6 +85,18 @@ export function renderLibraryView(container) {
   searchInput.placeholder = "Filtrar por título, artista ou ID do vídeo...";
   searchInput.setAttribute("aria-label", "Filtrar músicas da biblioteca");
 
+  const favFilterBtn = document.createElement("button");
+  favFilterBtn.type = "button";
+  favFilterBtn.className = "btn btn-secondary filter-toggle-btn";
+  favFilterBtn.setAttribute("aria-pressed", "false");
+  favFilterBtn.textContent = "★ Favoritas";
+  favFilterBtn.addEventListener("click", () => {
+    onlyFavorites = !onlyFavorites;
+    favFilterBtn.classList.toggle("active", onlyFavorites);
+    favFilterBtn.setAttribute("aria-pressed", onlyFavorites ? "true" : "false");
+    renderSongsList(lastLoadedData);
+  });
+
   const sortSelect = document.createElement("select");
   sortSelect.className = "select-control";
   sortSelect.setAttribute("aria-label", "Ordenar biblioteca por");
@@ -96,7 +111,7 @@ export function renderLibraryView(container) {
     sortSelect.appendChild(opt);
   }
 
-  controlsBar.append(searchInput, sortSelect);
+  controlsBar.append(searchInput, favFilterBtn, sortSelect);
   headerCard.append(topRow, controlsBar);
   shell.appendChild(headerCard);
 
@@ -112,26 +127,40 @@ export function renderLibraryView(container) {
   container.appendChild(shell);
 
   function renderSongsList(data) {
-    const songs = Array.isArray(data?.songs) ? data.songs : [];
-    const totalCount = Number(data?.totalCount ?? songs.length);
-    const totalSizeBytes = Number(data?.totalSizeBytes ?? 0);
+    lastLoadedData = data || { songs: [], totalCount: 0, totalSizeBytes: 0 };
+    const allSongs = Array.isArray(lastLoadedData.songs) ? lastLoadedData.songs : [];
+    const totalCount = Number(lastLoadedData.totalCount ?? allSongs.length);
+    const totalSizeBytes = Number(lastLoadedData.totalSizeBytes ?? 0);
+    const favCount = allSongs.filter((s) => Boolean(s.favorite)).length;
 
-    summaryEl.textContent = `${totalCount} música(s) pronta(s) • Espaço ocupado no disco: ${formatBytes(totalSizeBytes)}`;
+    summaryEl.textContent = `${totalCount} música(s) pronta(s) (${favCount} favorita(s)) • Espaço ocupado no disco: ${formatBytes(totalSizeBytes)}`;
     listHost.replaceChildren();
 
-    if (songs.length === 0) {
+    const visibleSongs = onlyFavorites
+      ? allSongs.filter((s) => Boolean(s.favorite))
+      : allSongs;
+
+    if (visibleSongs.length === 0) {
       const empty = document.createElement("p");
       empty.className = "muted";
-      empty.textContent = currentQuery
-        ? `Nenhuma música encontrada no cache para "${currentQuery}".`
-        : "Sua biblioteca local ainda está vazia. Clique em '+ Preparar nova música' para começar.";
+      if (onlyFavorites) {
+        empty.textContent =
+          "Nenhuma música marcada como favorita ainda. Clique na estrela (☆) ao lado de uma música para destacá-la.";
+      } else if (currentQuery) {
+        empty.textContent = `Nenhuma música encontrada no cache para "${currentQuery}".`;
+      } else {
+        empty.textContent =
+          "Sua biblioteca local ainda está vazia. Clique em '+ Preparar nova música' para começar.";
+      }
       listHost.appendChild(empty);
       return;
     }
 
-    for (const song of songs) {
+    for (const song of visibleSongs) {
       const item = document.createElement("article");
-      item.className = "library-item-card";
+      item.className = song.favorite
+        ? "library-item-card library-item-card--favorite"
+        : "library-item-card";
 
       const info = document.createElement("div");
       info.className = "library-item-info";
@@ -139,11 +168,18 @@ export function renderLibraryView(container) {
       const titleRow = document.createElement("div");
       titleRow.className = "library-item-title-row";
 
+      const favBtn = createFavoriteButton(song, {
+        onToggle: (nextFav) => {
+          item.classList.toggle("library-item-card--favorite", nextFav);
+          renderSongsList(lastLoadedData);
+        },
+      });
+
       const songTitle = document.createElement("h3");
       songTitle.className = "library-item-title";
       songTitle.textContent = song.title || song.videoId;
 
-      titleRow.appendChild(songTitle);
+      titleRow.append(favBtn, songTitle);
 
       if (song.compatibility) {
         titleRow.appendChild(

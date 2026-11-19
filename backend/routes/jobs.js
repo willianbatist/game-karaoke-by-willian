@@ -1,5 +1,6 @@
 /**
- * Rotas de acompanhamento e cancelamento de jobs (CONTRACTS.md §5 e §5.1):
+ * Rotas de acompanhamento e cancelamento de jobs (CONTRACTS.md §5, §5.1 e Aba Preparando):
+ * - GET /api/jobs
  * - GET /api/jobs/:id
  * - GET /api/jobs/:id/events (SSE)
  * - DELETE /api/jobs/:id
@@ -10,6 +11,22 @@ import { AppError } from "../utils/errors.js";
 
 export function createJobsRouter({ jobQueue }) {
   const router = Router();
+
+  router.get("/", (req, res, next) => {
+    try {
+      const jobs = typeof jobQueue.listJobs === "function" ? jobQueue.listJobs() : [];
+      const activeCount = jobs.filter(
+        (j) => j.status === "queued" || j.status === "running"
+      ).length;
+
+      return res.json({
+        jobs,
+        activeCount,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
 
   router.get("/:id", (req, res, next) => {
     try {

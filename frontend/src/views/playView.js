@@ -133,7 +133,7 @@ export function renderPlayView(container, params) {
 
       <section class="stage-arena">
         <div id="stage-video-wrapper" class="stage-video-wrapper" ${videoEnabled ? "" : "hidden"}>
-          <div id="yt-player-target"></div>
+          <div id="yt-player-target" class="stage-video-frame"></div>
         </div>
         <div id="yt-fallback-badge" class="stage-video-fallback" hidden>
           ${t("play.videoUnavailable")}
