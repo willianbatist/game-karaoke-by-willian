@@ -11,6 +11,7 @@ import { confirmDialog } from "../ui/confirmModal.js";
 
 const STAGE_LABELS = {
   queued: "Na fila aguardando início",
+  running: "Processando música",
   downloading: "Baixando vídeo e áudio do YouTube",
   separating: "Separando voz e instrumental (Demucs)",
   fetching_lyrics: "Buscando letra sincronizada",
@@ -19,13 +20,16 @@ const STAGE_LABELS = {
   canceled: "Cancelada",
 };
 
+const TERMINAL_STATES = new Set(["ready", "failed", "canceled"]);
+
 function isActiveState(state) {
-  return (
-    state === "queued" ||
-    state === "downloading" ||
-    state === "separating" ||
-    state === "fetching_lyrics"
-  );
+  if (!state) return false;
+  return !TERMINAL_STATES.has(String(state));
+}
+
+function resolveStageLabel(job) {
+  const stageKey = job?.stage || job?.step || job?.state;
+  return STAGE_LABELS[stageKey] || STAGE_LABELS[job?.state] || String(stageKey || "");
 }
 
 function updateHeaderJobsBadge(activeCount) {
@@ -127,9 +131,8 @@ export function renderPreparingQueueView(container) {
         : job.state === "failed"
           ? "pill pill-danger"
           : "pill";
-    statusPill.textContent = active
-      ? `${STAGE_LABELS[job.state] || job.state} (${pct}%)`
-      : STAGE_LABELS[job.state] || job.state;
+    const stageText = resolveStageLabel(job);
+    statusPill.textContent = active ? `${stageText} (${pct}%)` : stageText;
 
     titleRow.append(titleElItem, statusPill);
 
